@@ -4,9 +4,9 @@ from decouple import config, Csv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = config("SECRET_KEY")
+SECRET_KEY = config("SECRET_KEY", default="django-insecure-dev-only-secret-key")
 DEBUG = config("DEBUG", default=False, cast=bool)
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", cast=Csv())
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv())
 
 DJANGO_APPS = [
     "django.contrib.admin",
@@ -20,6 +20,7 @@ DJANGO_APPS = [
 THIRD_PARTY_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "django_filters",
 ]
@@ -130,7 +131,7 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", cast=Csv(), default="")
+CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", cast=Csv(), default=[])
 
 if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000

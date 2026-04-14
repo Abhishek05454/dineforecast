@@ -12,9 +12,10 @@ class ShiftSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate(self, attrs):
-        if attrs.get("start_time") and attrs.get("end_time"):
-            if attrs["start_time"] >= attrs["end_time"]:
-                raise serializers.ValidationError("start_time must be before end_time.")
+        start_time = attrs.get("start_time", getattr(self.instance, "start_time", None))
+        end_time = attrs.get("end_time", getattr(self.instance, "end_time", None))
+        if start_time and end_time and start_time >= end_time:
+            raise serializers.ValidationError("start_time must be before end_time.")
         return attrs
 
 
