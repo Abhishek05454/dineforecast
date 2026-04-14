@@ -50,9 +50,6 @@ class ForecastAccuracy(BaseModel):
     class Meta:
         verbose_name_plural = "forecast accuracies"
         ordering = ["-date"]
-        indexes = [
-            models.Index(fields=["date"]),
-        ]
 
     @property
     def variance(self):
@@ -62,7 +59,8 @@ class ForecastAccuracy(BaseModel):
     def accuracy_percentage(self):
         if self.predicted_covers == 0:
             return None
-        return round((1 - abs(self.variance) / self.predicted_covers) * 100, 2)
+        accuracy = (1 - abs(self.variance) / self.predicted_covers) * 100
+        return round(max(0, accuracy), 2)
 
     def __str__(self):
         return f"{self.date} | predicted {self.predicted_covers} | actual {self.actual_covers}"

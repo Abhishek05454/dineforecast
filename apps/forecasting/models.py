@@ -1,5 +1,7 @@
 from django.db import models
+from django.core.validators import MinValueValidator, MaxValueValidator
 from core.models import BaseModel
+from apps.operations.models import StaffRoleChoices
 
 
 class DemandForecast(BaseModel):
@@ -48,7 +50,9 @@ class HistoricalCover(BaseModel):
         SNOWY = "snowy", "Snowy"
 
     date = models.DateField()
-    hour = models.PositiveSmallIntegerField()
+    hour = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(0), MaxValueValidator(23)]
+    )
     covers = models.PositiveIntegerField()
     weather = models.CharField(max_length=20, choices=Weather.choices, blank=True)
     is_weekend = models.BooleanField(default=False)
@@ -67,14 +71,7 @@ class HistoricalCover(BaseModel):
 
 
 class StaffRole(BaseModel):
-    class Role(models.TextChoices):
-        WAITER = "waiter", "Waiter"
-        CHEF = "chef", "Chef"
-        BARTENDER = "bartender", "Bartender"
-        MANAGER = "manager", "Manager"
-        CASHIER = "cashier", "Cashier"
-
-    role = models.CharField(max_length=30, choices=Role.choices, unique=True)
+    role = models.CharField(max_length=30, choices=StaffRoleChoices.choices, unique=True)
     covers_per_staff = models.PositiveIntegerField()
 
     class Meta:
@@ -89,6 +86,7 @@ class DishPopularity(BaseModel):
     average_orders_percentage = models.DecimalField(
         max_digits=5,
         decimal_places=2,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
     )
 
     class Meta:

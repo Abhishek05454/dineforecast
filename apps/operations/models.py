@@ -2,6 +2,21 @@ from django.db import models
 from core.models import BaseModel
 
 
+class StaffRoleChoices(models.TextChoices):
+    WAITER = "waiter", "Waiter"
+    CHEF = "chef", "Chef"
+    BARTENDER = "bartender", "Bartender"
+    MANAGER = "manager", "Manager"
+    CASHIER = "cashier", "Cashier"
+
+
+class UnitChoices(models.TextChoices):
+    KG = "kg", "Kilograms"
+    LITRE = "litre", "Litres"
+    PIECE = "piece", "Pieces"
+    DOZEN = "dozen", "Dozen"
+
+
 class Shift(BaseModel):
     class ShiftStatus(models.TextChoices):
         SCHEDULED = "scheduled", "Scheduled"
@@ -9,15 +24,8 @@ class Shift(BaseModel):
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
 
-    class Role(models.TextChoices):
-        WAITER = "waiter", "Waiter"
-        CHEF = "chef", "Chef"
-        BARTENDER = "bartender", "Bartender"
-        MANAGER = "manager", "Manager"
-        CASHIER = "cashier", "Cashier"
-
     staff_name = models.CharField(max_length=150)
-    role = models.CharField(max_length=30, choices=Role.choices)
+    role = models.CharField(max_length=30, choices=StaffRoleChoices.choices)
     shift_date = models.DateField()
     start_time = models.TimeField()
     end_time = models.TimeField()
@@ -37,14 +45,8 @@ class Shift(BaseModel):
 
 
 class Ingredient(BaseModel):
-    class Unit(models.TextChoices):
-        KG = "kg", "Kilograms"
-        LITRE = "litre", "Litres"
-        PIECE = "piece", "Pieces"
-        DOZEN = "dozen", "Dozen"
-
     name = models.CharField(max_length=200, unique=True)
-    unit = models.CharField(max_length=20, choices=Unit.choices)
+    unit = models.CharField(max_length=20, choices=UnitChoices.choices)
     per_dish_quantity = models.DecimalField(max_digits=10, decimal_places=4)
     shelf_life_days = models.PositiveIntegerField()
     supplier_lead_time_days = models.PositiveIntegerField()
@@ -57,14 +59,8 @@ class Ingredient(BaseModel):
 
 
 class InventoryItem(BaseModel):
-    class Unit(models.TextChoices):
-        KG = "kg", "Kilograms"
-        LITRE = "litre", "Litres"
-        PIECE = "piece", "Pieces"
-        DOZEN = "dozen", "Dozen"
-
     name = models.CharField(max_length=200, unique=True)
-    unit = models.CharField(max_length=20, choices=Unit.choices)
+    unit = models.CharField(max_length=20, choices=UnitChoices.choices)
     current_quantity = models.DecimalField(max_digits=10, decimal_places=2)
     reorder_threshold = models.DecimalField(max_digits=10, decimal_places=2)
     unit_cost = models.DecimalField(max_digits=10, decimal_places=2)
