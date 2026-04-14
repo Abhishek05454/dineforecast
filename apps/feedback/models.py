@@ -39,3 +39,28 @@ class FeedbackResponse(BaseModel):
 
     def __str__(self):
         return f"Response to {self.feedback}"
+
+
+class ForecastAccuracy(BaseModel):
+    date = models.DateField(unique=True)
+    predicted_covers = models.PositiveIntegerField()
+    actual_covers = models.PositiveIntegerField()
+    reason = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name_plural = "forecast accuracies"
+        ordering = ["-date"]
+
+    @property
+    def variance(self):
+        return self.actual_covers - self.predicted_covers
+
+    @property
+    def accuracy_percentage(self):
+        if self.predicted_covers == 0:
+            return None
+        accuracy = (1 - abs(self.variance) / self.predicted_covers) * 100
+        return round(max(0, accuracy), 2)
+
+    def __str__(self):
+        return f"{self.date} | predicted {self.predicted_covers} | actual {self.actual_covers}"
