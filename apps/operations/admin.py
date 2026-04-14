@@ -11,7 +11,7 @@ class ShiftAdmin(admin.ModelAdmin):
 
 @admin.register(Ingredient)
 class IngredientAdmin(admin.ModelAdmin):
-    list_display = ["name", "unit", "per_dish_quantity", "shelf_life_days", "supplier_lead_time_days"]
+    list_display = ["name", "unit", "default_quantity_per_dish", "shelf_life_days", "supplier_lead_time_days"]
     list_filter = ["unit"]
     search_fields = ["name"]
 

@@ -1,20 +1,6 @@
 from django.db import models
 from core.models import BaseModel
-
-
-class StaffRoleChoices(models.TextChoices):
-    WAITER = "waiter", "Waiter"
-    CHEF = "chef", "Chef"
-    BARTENDER = "bartender", "Bartender"
-    MANAGER = "manager", "Manager"
-    CASHIER = "cashier", "Cashier"
-
-
-class UnitChoices(models.TextChoices):
-    KG = "kg", "Kilograms"
-    LITRE = "litre", "Litres"
-    PIECE = "piece", "Pieces"
-    DOZEN = "dozen", "Dozen"
+from core.choices import StaffRoleChoices, UnitChoices
 
 
 class Shift(BaseModel):
@@ -47,7 +33,7 @@ class Shift(BaseModel):
 class Ingredient(BaseModel):
     name = models.CharField(max_length=200, unique=True)
     unit = models.CharField(max_length=20, choices=UnitChoices.choices)
-    per_dish_quantity = models.DecimalField(max_digits=10, decimal_places=4)
+    default_quantity_per_dish = models.DecimalField(max_digits=10, decimal_places=4)
     shelf_life_days = models.PositiveIntegerField()
     supplier_lead_time_days = models.PositiveIntegerField()
 
@@ -55,7 +41,7 @@ class Ingredient(BaseModel):
         ordering = ["name"]
 
     def __str__(self):
-        return f"{self.name} ({self.per_dish_quantity} {self.unit}/dish)"
+        return f"{self.name} ({self.default_quantity_per_dish} {self.unit}/dish)"
 
 
 class InventoryItem(BaseModel):
