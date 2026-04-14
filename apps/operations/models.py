@@ -27,9 +27,33 @@ class Shift(BaseModel):
 
     class Meta:
         ordering = ["shift_date", "start_time"]
+        indexes = [
+            models.Index(fields=["shift_date"]),
+            models.Index(fields=["role"]),
+        ]
 
     def __str__(self):
         return f"{self.staff_name} | {self.role} | {self.shift_date}"
+
+
+class Ingredient(BaseModel):
+    class Unit(models.TextChoices):
+        KG = "kg", "Kilograms"
+        LITRE = "litre", "Litres"
+        PIECE = "piece", "Pieces"
+        DOZEN = "dozen", "Dozen"
+
+    name = models.CharField(max_length=200, unique=True)
+    unit = models.CharField(max_length=20, choices=Unit.choices)
+    per_dish_quantity = models.DecimalField(max_digits=10, decimal_places=4)
+    shelf_life_days = models.PositiveIntegerField()
+    supplier_lead_time_days = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.per_dish_quantity} {self.unit}/dish)"
 
 
 class InventoryItem(BaseModel):
