@@ -2,7 +2,6 @@ import pytest
 
 from apps.forecasting.services import (
     DEFAULT_HOURLY_DISTRIBUTION,
-    HourlyDistributionResult,
     distribute_covers_by_hour,
 )
 
@@ -57,6 +56,24 @@ class TestDistributeCoversByHour:
             assert isinstance(slot.covers, int)
 
 
+class TestTotalCoversValidation:
+    def test_raises_on_nan(self):
+        with pytest.raises(ValueError, match="finite non-negative"):
+            distribute_covers_by_hour(float("nan"))
+
+    def test_raises_on_inf(self):
+        with pytest.raises(ValueError, match="finite non-negative"):
+            distribute_covers_by_hour(float("inf"))
+
+    def test_raises_on_negative(self):
+        with pytest.raises(ValueError, match="finite non-negative"):
+            distribute_covers_by_hour(-10)
+
+    def test_zero_is_valid(self):
+        result = distribute_covers_by_hour(0)
+        assert all(s.covers == 0 for s in result.slots)
+
+
 class TestValidateDistribution:
     def test_raises_when_shares_sum_below_1(self):
         with pytest.raises(ValueError, match="sum to 1.0"):
@@ -66,14 +83,23 @@ class TestValidateDistribution:
         with pytest.raises(ValueError, match="sum to 1.0"):
             distribute_covers_by_hour(100, distribution={12: 0.6, 13: 0.6})
 
-    def test_allows_tolerance_of_0_01(self):
-        # 0.999 is within ±0.01 — should not raise
+    def test_allows_sum_slightly_below_1(self):
+        # 0.999 is within ±0.01 — should not raise and must not under-allocate
         result = distribute_covers_by_hour(100, distribution={12: 0.5, 13: 0.499})
-        assert result is not None
+        assert sum(s.covers for s in result.slots) == round(result.total_covers)
+
+    def test_allows_sum_slightly_above_1_without_overallocating(self):
+        # 1.005 is within ±0.01 — should not raise and must not over-allocate
+        result = distribute_covers_by_hour(100, distribution={12: 0.5, 13: 0.505})
+        assert sum(s.covers for s in result.slots) == round(result.total_covers)
 
     def test_raises_when_hour_out_of_range(self):
         with pytest.raises(ValueError, match="out of range"):
             distribute_covers_by_hour(100, distribution={25: 0.5, 13: 0.5})
+
+    def test_raises_on_nan_share(self):
+        with pytest.raises(ValueError, match="finite real numbers"):
+            distribute_covers_by_hour(100, distribution={12: float("nan"), 13: 1.0})
 
     def test_raises_on_negative_share(self):
         with pytest.raises(ValueError, match="non-negative"):

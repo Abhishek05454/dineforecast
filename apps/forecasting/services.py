@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Optional
@@ -48,17 +49,28 @@ def distribute_covers_by_hour(
         HourlyDistributionResult with per-hour cover counts.
 
     Raises:
-        ValueError: if the distribution is empty, if any share is negative,
-                    if any hour is outside 0–23, or if shares do not sum to
-                    1.0 (±0.01 tolerance).
+        ValueError: if total_covers is not a finite non-negative number,
+                    if the distribution is empty, if any share is not a
+                    finite real number or is negative, if any hour is outside
+                    0–23, or if shares do not sum to 1.0 (±0.01 tolerance).
     """
+    if not math.isfinite(total_covers) or total_covers < 0:
+        raise ValueError(
+            f"total_covers must be a finite non-negative number (got {total_covers!r})."
+        )
+
     if distribution is None:
         distribution = DEFAULT_HOURLY_DISTRIBUTION
 
     _validate_distribution(distribution)
 
-    sorted_items = sorted(distribution.items())
-    slots = _allocate_covers(total_covers, sorted_items)
+    # Normalize shares to sum exactly 1.0 so _allocate_covers is never
+    # thrown off by floating-point totals within the ±0.01 tolerance band.
+    raw_total = sum(distribution.values())
+    normalized = {h: s / raw_total for h, s in distribution.items()}
+
+    sorted_items = sorted(normalized.items())
+    slots = _allocate_covers(total_covers, sorted_items, original_shares=dict(distribution))
 
     return HourlyDistributionResult(total_covers=total_covers, slots=slots)
 
@@ -66,31 +78,37 @@ def distribute_covers_by_hour(
 def _allocate_covers(
     total_covers: float,
     sorted_items: list[tuple[int, float]],
+    original_shares: dict[int, float],
 ) -> list[HourlySlot]:
     """
-    Largest-remainder method: floor each slot first, then distribute
-    remaining covers to slots with the largest fractional parts.
+    Largest-remainder method on normalized shares: floor each slot first,
+    then add one cover to slots with the largest fractional parts (remainder > 0),
+    or remove one cover from slots with the smallest fractional parts (remainder < 0).
     Guarantees sum(slot.covers) == round(total_covers).
     """
     target = round(total_covers)
-    floored = [(hour, share, int(total_covers * share)) for hour, share in sorted_items]
+    floored = [(hour, share, math.floor(total_covers * share)) for hour, share in sorted_items]
     allocated = sum(c for _, _, c in floored)
     remainder = target - allocated
 
-    # rank slots by descending fractional part to assign leftover covers
-    remainders = sorted(
-        range(len(floored)),
-        key=lambda i: (total_covers * floored[i][1]) - floored[i][2],
-        reverse=True,
-    )
+    fractional_parts = [
+        (total_covers * share) - covers
+        for _, share, covers in floored
+    ]
+    descending = sorted(range(len(floored)), key=lambda i: fractional_parts[i], reverse=True)
+    ascending = sorted(range(len(floored)), key=lambda i: fractional_parts[i])
 
     covers_list = [c for _, _, c in floored]
-    for i in range(remainder):
-        covers_list[remainders[i]] += 1
+    if remainder > 0:
+        for i in range(remainder):
+            covers_list[descending[i]] += 1
+    elif remainder < 0:
+        for i in range(-remainder):
+            covers_list[ascending[i]] -= 1
 
     return [
-        HourlySlot(hour=hour, covers=covers_list[idx], share=share)
-        for idx, (hour, share, _) in enumerate(floored)
+        HourlySlot(hour=hour, covers=covers_list[idx], share=original_shares[hour])
+        for idx, (hour, _, _) in enumerate(floored)
     ]
 
 
@@ -101,6 +119,10 @@ def _validate_distribution(distribution: dict[int, float]) -> None:
     invalid_hours = [h for h in distribution if not (0 <= h <= 23)]
     if invalid_hours:
         raise ValueError(f"Hours out of range 0–23: {invalid_hours}")
+
+    non_finite_shares = [h for h, s in distribution.items() if not math.isfinite(s)]
+    if non_finite_shares:
+        raise ValueError(f"Shares must be finite real numbers. Invalid hours: {non_finite_shares}")
 
     negative_shares = [h for h, s in distribution.items() if s < 0]
     if negative_shares:
