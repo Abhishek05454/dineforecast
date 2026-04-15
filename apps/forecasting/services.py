@@ -6,7 +6,7 @@ from typing import Optional
 
 from django.db.models import Avg, Sum
 
-from .models import HistoricalCover
+from .models import HistoricalCover, StaffRole
 
 DEFAULT_HOURLY_DISTRIBUTION: dict[int, float] = {
     12: 0.10,
@@ -82,17 +82,20 @@ def _allocate_covers(
     ]
 
 
+def _validate_hour_key_map(values: dict[int, object]) -> None:
+    invalid_keys = [h for h in values if not isinstance(h, int) or isinstance(h, bool)]
+    if invalid_keys:
+        raise ValueError(f"Hour keys must be plain integers: {invalid_keys}")
+    out_of_range = [h for h in values if not (0 <= h <= 23)]
+    if out_of_range:
+        raise ValueError(f"Hour keys must be in the range 0-23: {out_of_range}")
+
+
 def _validate_distribution(distribution: dict[int, float]) -> None:
     if not distribution:
         raise ValueError("Distribution must not be empty.")
 
-    invalid_hour_types = [h for h in distribution if not isinstance(h, int) or isinstance(h, bool)]
-    if invalid_hour_types:
-        raise ValueError(f"Hour keys must be plain integers: {invalid_hour_types}")
-
-    invalid_hours = [h for h in distribution if not (0 <= h <= 23)]
-    if invalid_hours:
-        raise ValueError(f"Hours out of range 0–23: {invalid_hours}")
+    _validate_hour_key_map(distribution)
 
     non_numeric_shares = [h for h, s in distribution.items() if not isinstance(s, numbers.Real) or isinstance(s, bool)]
     if non_numeric_shares:
@@ -270,3 +273,62 @@ class ForecastService:
         next_day_ordinal = records[-1]["date"].toordinal() + 1 - first_ordinal
         projected = slope * next_day_ordinal + intercept
         return max(0.0, projected)
+
+
+@dataclass
+class RoleRequirement:
+    role: str
+    covers_per_staff: int
+    staff_required: int
+
+
+@dataclass
+class HourlyStaffingResult:
+    hour: int
+    covers: int
+    roles: list[RoleRequirement]
+
+    def total_staff(self) -> int:
+        return sum(r.staff_required for r in self.roles)
+
+
+@dataclass
+class StaffPlanResult:
+    hours: list[HourlyStaffingResult]
+
+    def as_dict(self) -> dict[int, dict[str, int]]:
+        return {
+            h.hour: {r.role: r.staff_required for r in h.roles}
+            for h in self.hours
+        }
+
+
+class StaffPlanningService:
+
+    def __init__(self, covers_by_hour: dict[int, int]):
+        if not covers_by_hour:
+            raise ValueError("covers_by_hour must not be empty.")
+        _validate_hour_key_map(covers_by_hour)
+        invalid_covers = [h for h, c in covers_by_hour.items() if not isinstance(c, int) or isinstance(c, bool)]
+        if invalid_covers:
+            raise ValueError(f"Cover counts must be plain integers. Invalid hours: {invalid_covers}")
+        negative = [h for h, c in covers_by_hour.items() if c < 0]
+        if negative:
+            raise ValueError(f"Cover counts must be non-negative. Invalid hours: {negative}")
+        self.covers_by_hour = dict(covers_by_hour)
+
+    def plan(self) -> StaffPlanResult:
+        roles = list(StaffRole.objects.filter(covers_per_staff__gt=0))
+        hours = []
+        for hour in sorted(self.covers_by_hour):
+            covers = self.covers_by_hour[hour]
+            role_reqs = [
+                RoleRequirement(
+                    role=r.role,
+                    covers_per_staff=r.covers_per_staff,
+                    staff_required=math.ceil(covers / r.covers_per_staff) if covers > 0 else 0,
+                )
+                for r in roles
+            ]
+            hours.append(HourlyStaffingResult(hour=hour, covers=covers, roles=role_reqs))
+        return StaffPlanResult(hours=hours)
