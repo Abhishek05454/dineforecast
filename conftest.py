@@ -3,7 +3,7 @@ from django.core.cache import cache
 
 
 @pytest.fixture(autouse=True)
-def disable_ssl_redirect(settings):
+def test_setup(settings):
     settings.SECURE_SSL_REDIRECT = False
     settings.CACHES = {
         "default": {

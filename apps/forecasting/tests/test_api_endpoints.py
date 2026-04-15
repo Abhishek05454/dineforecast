@@ -1,7 +1,9 @@
 from datetime import date, timedelta
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from rest_framework.test import APIClient
 
 pytestmark = pytest.mark.django_db
@@ -82,6 +84,44 @@ class TestForecastEndpoint:
         assert payload["ingredient_plan_available"] is False
         assert payload["ingredient_plan_error"] is not None
         assert payload["ingredient_plan"] == []
+
+    def test_second_request_served_from_cache(self, auth_client):
+        target = date(2024, 6, 10)
+        for offset in range(1, 8):
+            day = target - timedelta(days=offset)
+            HistoricalCover.objects.create(
+                date=day, hour=12, covers=100, is_weekend=day.weekday() >= 5,
+            )
+        with patch("apps.forecasting.views.ForecastService") as mock_svc:
+            mock_svc.return_value.predict.return_value.final_prediction = 100
+            mock_svc.return_value.predict.return_value.base_prediction = 100
+            mock_svc.return_value.predict.return_value.is_weekend = False
+            mock_svc.return_value.predict.return_value.weather = ""
+            mock_svc.return_value.predict.return_value.adjustments = []
+            mock_svc.return_value.predict.return_value.last_7_days_avg = 100.0
+            mock_svc.return_value.predict.return_value.same_weekday_avg = None
+            mock_svc.return_value.predict.return_value.recent_trend = None
+            mock_svc.return_value.predict.return_value.feedback_adjustment_factor = 1.0
+            mock_svc.return_value.predict.return_value.feedback_samples = 0
+            mock_svc.return_value.predict.return_value.learning_rate = 0.0
+            mock_svc.return_value.predict.return_value.component_weights = {}
+
+            auth_client.get("/api/v1/forecasting/forecast/", {"date": target.isoformat()})
+            auth_client.get("/api/v1/forecasting/forecast/", {"date": target.isoformat()})
+            assert mock_svc.return_value.predict.call_count == 1
+
+    def test_feedback_submission_invalidates_forecast_cache(self, auth_client):
+        target = date(2024, 6, 10)
+        cache_key = f"forecast:{target.isoformat()}"
+        cache.set(cache_key, {"date": target.isoformat(), "total_covers": 100})
+        assert cache.get(cache_key) is not None
+
+        auth_client.post(
+            "/api/v1/feedback/forecast/",
+            {"date": target.isoformat(), "predicted": 100, "actual": 120},
+            format="json",
+        )
+        assert cache.get(cache_key) is None
 
     def test_get_forecast_requires_valid_date(self, auth_client):
         response = auth_client.get("/api/v1/forecasting/forecast/", {"date": "invalid"})
