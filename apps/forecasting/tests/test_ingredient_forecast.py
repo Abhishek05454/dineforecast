@@ -113,7 +113,7 @@ class TestIngredientForecastService:
         ).forecast()
         mapping = result.as_dict()
         assert "beef" in mapping
-        assert mapping["beef"] == round(20.0 * 1.15, 4)
+        assert mapping["beef"] == round(20.0 * (1 + DEFAULT_BUFFER_FRACTION), 4)
 
     def test_result_stores_covers_and_buffer_fraction(self):
         result = IngredientForecastService(predicted_covers=200, buffer_fraction=0.10).forecast()
@@ -163,7 +163,10 @@ class TestFromDatabaseFactory:
 
         assert result.requirements
         assert result.requirements[0].name == "beef"
-        assert result.requirements[0].total_quantity == round(20.0 * 1.15, 4)
+        assert result.requirements[0].total_quantity == round(
+            20.0 * (1 + DEFAULT_BUFFER_FRACTION),
+            4,
+        )
 
 
 class TestIngredientForecastServiceValidation:

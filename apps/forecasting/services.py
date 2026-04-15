@@ -390,7 +390,7 @@ class IngredientForecastService:
             )
         self.covers = predicted_covers
         self.buffer_fraction = buffer_fraction
-        self.dish_popularity = self._normalize_dish_popularity(dish_popularity or {})
+        self.dish_popularity = self._validate_dish_popularity(dish_popularity or {})
         self.ingredient_per_dish = list(ingredient_per_dish or [])
         self._validate_recipe_lines(self.ingredient_per_dish)
 
@@ -404,9 +404,10 @@ class IngredientForecastService:
             d.dish_name: float(d.average_orders_percentage)
             for d in DishPopularity.objects.all()
         }
+        ingredients = list(Ingredient.objects.all())
         recipe_lines: list[IngredientPerDishInput] = []
         for dish_name in dish_popularity:
-            for ingredient in Ingredient.objects.all():
+            for ingredient in ingredients:
                 recipe_lines.append(
                     IngredientPerDishInput(
                         dish_name=dish_name,
@@ -491,7 +492,7 @@ class IngredientForecastService:
         )
 
     @staticmethod
-    def _normalize_dish_popularity(
+    def _validate_dish_popularity(
         dish_popularity: Mapping[str, float],
     ) -> dict[str, float]:
         normalized: dict[str, float] = {}
@@ -515,8 +516,15 @@ class IngredientForecastService:
         by_ingredient: dict[str, tuple[str, int, int]] = {}
 
         for line in lines:
-            if not line.dish_name or not line.ingredient_name:
-                raise ValueError("dish_name and ingredient_name must be non-empty.")
+            if (
+                not isinstance(line.dish_name, str)
+                or not line.dish_name.strip()
+                or not isinstance(line.ingredient_name, str)
+                or not line.ingredient_name.strip()
+            ):
+                raise ValueError(
+                    "dish_name and ingredient_name must be non-empty strings."
+                )
             if not isinstance(line.quantity_per_dish, numbers.Real) or isinstance(
                 line.quantity_per_dish,
                 bool,
