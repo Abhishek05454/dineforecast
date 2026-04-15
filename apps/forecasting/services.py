@@ -2,11 +2,12 @@ import math
 import numbers
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Optional
+from typing import Iterable, Mapping, Optional
 
 from django.db.models import Avg, Sum
 
-from .models import HistoricalCover, StaffRole
+from apps.operations.models import Ingredient
+from .models import DishPopularity, HistoricalCover, StaffRole
 
 DEFAULT_HOURLY_DISTRIBUTION: dict[int, float] = {
     12: 0.10,
@@ -332,3 +333,211 @@ class StaffPlanningService:
             ]
             hours.append(HourlyStaffingResult(hour=hour, covers=covers, roles=role_reqs))
         return StaffPlanResult(hours=hours)
+
+
+DEFAULT_BUFFER_FRACTION: float = 0.15
+
+
+@dataclass(frozen=True)
+class IngredientPerDishInput:
+    dish_name: str
+    ingredient_name: str
+    quantity_per_dish: float
+    unit: str
+    shelf_life_days: int
+    supplier_lead_time_days: int
+
+
+@dataclass
+class IngredientRequirement:
+    name: str
+    unit: str
+    base_quantity: float
+    buffer_quantity: float
+    total_quantity: float
+    shelf_life_days: int
+    supplier_lead_time_days: int
+    order_days_ahead: int
+    freshness_risk: bool
+
+
+@dataclass
+class IngredientForecastResult:
+    covers: float
+    buffer_fraction: float
+    requirements: list[IngredientRequirement]
+
+    def as_dict(self) -> dict[str, float]:
+        return {r.name: r.total_quantity for r in self.requirements}
+
+
+class IngredientForecastService:
+
+    def __init__(
+        self,
+        predicted_covers: float,
+        dish_popularity: Mapping[str, float] | None = None,
+        ingredient_per_dish: Iterable[IngredientPerDishInput] | None = None,
+        buffer_fraction: float = DEFAULT_BUFFER_FRACTION,
+    ):
+        if not math.isfinite(predicted_covers) or predicted_covers < 0:
+            raise ValueError(
+                f"predicted_covers must be a finite non-negative number (got {predicted_covers!r})."
+            )
+        if not math.isfinite(buffer_fraction) or not (0.10 <= buffer_fraction <= 0.20):
+            raise ValueError(
+                f"buffer_fraction must be between 0.10 and 0.20 (got {buffer_fraction!r})."
+            )
+        self.covers = predicted_covers
+        self.buffer_fraction = buffer_fraction
+        self.dish_popularity = self._normalize_dish_popularity(dish_popularity or {})
+        self.ingredient_per_dish = list(ingredient_per_dish or [])
+        self._validate_recipe_lines(self.ingredient_per_dish)
+
+    @classmethod
+    def from_database(
+        cls,
+        predicted_covers: float,
+        buffer_fraction: float = DEFAULT_BUFFER_FRACTION,
+    ) -> "IngredientForecastService":
+        dish_popularity = {
+            d.dish_name: float(d.average_orders_percentage)
+            for d in DishPopularity.objects.all()
+        }
+        recipe_lines: list[IngredientPerDishInput] = []
+        for dish_name in dish_popularity:
+            for ingredient in Ingredient.objects.all():
+                recipe_lines.append(
+                    IngredientPerDishInput(
+                        dish_name=dish_name,
+                        ingredient_name=ingredient.name,
+                        quantity_per_dish=float(ingredient.default_quantity_per_dish),
+                        unit=ingredient.unit,
+                        shelf_life_days=ingredient.shelf_life_days,
+                        supplier_lead_time_days=ingredient.supplier_lead_time_days,
+                    )
+                )
+        return cls(
+            predicted_covers=predicted_covers,
+            dish_popularity=dish_popularity,
+            ingredient_per_dish=recipe_lines,
+            buffer_fraction=buffer_fraction,
+        )
+
+    def forecast(self) -> IngredientForecastResult:
+        if not self.ingredient_per_dish:
+            return IngredientForecastResult(
+                covers=self.covers,
+                buffer_fraction=self.buffer_fraction,
+                requirements=[],
+            )
+
+        dish_orders = self._dish_orders()
+        ingredient_totals: dict[str, float] = {}
+        metadata: dict[str, IngredientPerDishInput] = {}
+
+        for line in self.ingredient_per_dish:
+            orders_for_dish = dish_orders.get(line.dish_name, 0.0)
+            ingredient_totals[line.ingredient_name] = ingredient_totals.get(line.ingredient_name, 0.0) + (
+                orders_for_dish * line.quantity_per_dish
+            )
+            if line.ingredient_name not in metadata:
+                metadata[line.ingredient_name] = line
+
+        requirements = [
+            self._build_requirement(name, ingredient_totals[name], metadata[name])
+            for name in sorted(ingredient_totals)
+        ]
+
+        return IngredientForecastResult(
+            covers=self.covers,
+            buffer_fraction=self.buffer_fraction,
+            requirements=requirements,
+        )
+
+    def _dish_orders(self) -> dict[str, float]:
+        if not self.dish_popularity:
+            return {}
+        popularity_total = sum(self.dish_popularity.values())
+        if popularity_total == 0:
+            return {dish_name: 0.0 for dish_name in self.dish_popularity}
+        return {
+            dish_name: self.covers * (popularity / popularity_total)
+            for dish_name, popularity in self.dish_popularity.items()
+        }
+
+    def _build_requirement(
+        self,
+        ingredient_name: str,
+        base_quantity: float,
+        line: IngredientPerDishInput,
+    ) -> IngredientRequirement:
+        base = base_quantity
+        buffer = base * self.buffer_fraction
+        total = base + buffer
+        order_days_ahead = line.supplier_lead_time_days
+        freshness_risk = line.supplier_lead_time_days > line.shelf_life_days
+
+        return IngredientRequirement(
+            name=ingredient_name,
+            unit=line.unit,
+            base_quantity=round(base, 4),
+            buffer_quantity=round(buffer, 4),
+            total_quantity=round(total, 4),
+            shelf_life_days=line.shelf_life_days,
+            supplier_lead_time_days=line.supplier_lead_time_days,
+            order_days_ahead=order_days_ahead,
+            freshness_risk=freshness_risk,
+        )
+
+    @staticmethod
+    def _normalize_dish_popularity(
+        dish_popularity: Mapping[str, float],
+    ) -> dict[str, float]:
+        normalized: dict[str, float] = {}
+        for dish_name, popularity in dish_popularity.items():
+            if not isinstance(dish_name, str) or not dish_name.strip():
+                raise ValueError("dish_popularity keys must be non-empty strings.")
+            if not isinstance(popularity, numbers.Real) or isinstance(popularity, bool):
+                raise ValueError(
+                    f"Dish popularity must be numeric for dish {dish_name!r}."
+                )
+            value = float(popularity)
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(
+                    f"Dish popularity must be a finite non-negative number for dish {dish_name!r}."
+                )
+            normalized[dish_name] = value
+        return normalized
+
+    @staticmethod
+    def _validate_recipe_lines(lines: list[IngredientPerDishInput]) -> None:
+        by_ingredient: dict[str, tuple[str, int, int]] = {}
+
+        for line in lines:
+            if not line.dish_name or not line.ingredient_name:
+                raise ValueError("dish_name and ingredient_name must be non-empty.")
+            if not isinstance(line.quantity_per_dish, numbers.Real) or isinstance(
+                line.quantity_per_dish,
+                bool,
+            ):
+                raise ValueError(
+                    f"quantity_per_dish must be numeric for ingredient {line.ingredient_name!r}."
+                )
+            if not math.isfinite(float(line.quantity_per_dish)) or line.quantity_per_dish < 0:
+                raise ValueError(
+                    f"quantity_per_dish must be finite and non-negative for ingredient {line.ingredient_name!r}."
+                )
+            if line.shelf_life_days < 0 or line.supplier_lead_time_days < 0:
+                raise ValueError(
+                    f"shelf_life_days and supplier_lead_time_days must be non-negative for ingredient {line.ingredient_name!r}."
+                )
+
+            existing = by_ingredient.get(line.ingredient_name)
+            current = (line.unit, line.shelf_life_days, line.supplier_lead_time_days)
+            if existing is None:
+                by_ingredient[line.ingredient_name] = current
+            elif existing != current:
+                raise ValueError(
+                    f"Ingredient metadata must be consistent across dishes for ingredient {line.ingredient_name!r}."
+                )
