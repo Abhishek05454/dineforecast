@@ -6,16 +6,12 @@ from apps.forecasting.models import HistoricalCover
 from apps.forecasting.services import ForecastService
 
 
-def _make_covers(base_date: date, covers_by_offset: dict[int, int]):
-    """
-    Helper: create HistoricalCover rows.
-    covers_by_offset = {days_before_target: covers}
-    """
+def _make_covers(base_date: date, covers_by_offset: dict[int, int], hour: int = 12):
     for offset, covers in covers_by_offset.items():
         target = base_date - timedelta(days=offset)
         HistoricalCover.objects.get_or_create(
             date=target,
-            hour=12,
+            hour=hour,
             defaults={"covers": covers, "is_weekend": target.weekday() >= 5},
         )
 
@@ -31,13 +27,34 @@ class TestWeightedAverage:
         result = svc.predict()
         assert result.final_prediction == 0.0
 
-    def test_uses_only_available_components(self):
+    def test_uses_only_last7_when_no_weekday_history(self):
         target = date(2024, 6, 10)
-        _make_covers(target, {1: 100, 2: 100, 3: 100, 4: 100, 5: 100, 6: 100, 7: 100})
+        # offsets 1–6 only — offset 7 would be same weekday and feed _same_weekday_avg
+        _make_covers(target, {1: 100, 2: 100, 3: 100, 4: 100, 5: 100, 6: 100})
         svc = ForecastService(target)
         result = svc.predict()
-        # All data is within last-7, no weekday history → base should reflect last-7
         assert result.base_prediction > 0
+        assert result.same_weekday_avg is None
+
+
+# ---------------------------------------------------------------------------
+# Multi-hour aggregation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestMultiHourAggregation:
+    def test_daily_total_sums_across_hours(self):
+        """
+        Two rows on the same date (different hours) should be summed,
+        not averaged. 60 + 40 = 100 total covers for that day.
+        """
+        target = date(2024, 7, 15)
+        day = target - timedelta(days=1)
+        HistoricalCover.objects.create(date=day, hour=12, covers=60, is_weekend=False)
+        HistoricalCover.objects.create(date=day, hour=18, covers=40, is_weekend=False)
+
+        result = ForecastService(target).predict()
+        assert result.last_7_days_avg == 100.0
 
 
 # ---------------------------------------------------------------------------
@@ -47,18 +64,16 @@ class TestWeightedAverage:
 @pytest.mark.django_db
 class TestWeekendAdjustment:
     def test_weekend_increases_prediction(self):
-        # Saturday
         saturday = date(2024, 6, 8)
-        _make_covers(saturday, {i: 100 for i in range(1, 8)})
+        _make_covers(saturday, {i: 100 for i in range(1, 7)})
 
         result = ForecastService(saturday).predict()
         assert "weekend +30%" in result.adjustments
         assert result.final_prediction > result.base_prediction
 
     def test_weekday_no_boost(self):
-        # Monday
         monday = date(2024, 6, 10)
-        _make_covers(monday, {i: 100 for i in range(1, 8)})
+        _make_covers(monday, {i: 100 for i in range(1, 7)})
 
         result = ForecastService(monday).predict()
         assert not any("weekend" in a for a in result.adjustments)
@@ -73,7 +88,7 @@ class TestWeekendAdjustment:
 class TestWeatherAdjustment:
     def test_rain_decreases_prediction(self):
         target = date(2024, 6, 10)
-        _make_covers(target, {i: 100 for i in range(1, 8)})
+        _make_covers(target, {i: 100 for i in range(1, 7)})
 
         result = ForecastService(target, weather="rainy").predict()
         assert "rainy weather -15%" in result.adjustments
@@ -81,7 +96,7 @@ class TestWeatherAdjustment:
 
     def test_snow_decreases_prediction(self):
         target = date(2024, 6, 10)
-        _make_covers(target, {i: 100 for i in range(1, 8)})
+        _make_covers(target, {i: 100 for i in range(1, 7)})
 
         result = ForecastService(target, weather="snowy").predict()
         assert "snowy weather -30%" in result.adjustments
@@ -89,7 +104,7 @@ class TestWeatherAdjustment:
 
     def test_sunny_no_penalty(self):
         target = date(2024, 6, 10)
-        _make_covers(target, {i: 100 for i in range(1, 8)})
+        _make_covers(target, {i: 100 for i in range(1, 7)})
 
         result = ForecastService(target, weather="sunny").predict()
         assert result.adjustments == []
@@ -101,17 +116,17 @@ class TestWeatherAdjustment:
 
 class TestLinearProjection:
     def test_upward_trend(self):
-        records = [{"date": date(2024, 1, i), "covers": i * 10} for i in range(1, 8)]
+        records = [{"date": date(2024, 1, i), "daily_total": i * 10} for i in range(1, 8)]
         projected = ForecastService._linear_projection(records)
-        assert projected > records[-1]["covers"]
+        assert projected > records[-1]["daily_total"]
 
     def test_downward_trend_clamped_to_zero(self):
-        records = [{"date": date(2024, 1, i), "covers": max(0, 50 - i * 10)} for i in range(1, 6)]
+        records = [{"date": date(2024, 1, i), "daily_total": max(0, 50 - i * 10)} for i in range(1, 6)]
         projected = ForecastService._linear_projection(records)
         assert projected >= 0
 
     def test_flat_trend_returns_mean(self):
-        records = [{"date": date(2024, 1, i), "covers": 50} for i in range(1, 6)]
+        records = [{"date": date(2024, 1, i), "daily_total": 50} for i in range(1, 6)]
         projected = ForecastService._linear_projection(records)
         assert abs(projected - 50) < 0.01
 
@@ -124,9 +139,9 @@ class TestLinearProjection:
 class TestCombinedScenario:
     def test_rainy_weekend_adjustments_stack(self):
         saturday = date(2024, 6, 8)
-        _make_covers(saturday, {i: 100 for i in range(1, 8)})
+        _make_covers(saturday, {i: 100 for i in range(1, 7)})
 
         result = ForecastService(saturday, weather="rainy").predict()
         assert len(result.adjustments) == 2
-        # +30% then -15% → net ~10.5% above base
+        # base × 1.30 × 0.85 ≈ 10.5% above base
         assert result.final_prediction > result.base_prediction

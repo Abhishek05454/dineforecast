@@ -2,14 +2,10 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Optional
 
-from django.db.models import Avg, QuerySet
+from django.db.models import Avg, Sum
 
 from .models import HistoricalCover
 
-
-# ---------------------------------------------------------------------------
-# Result container
-# ---------------------------------------------------------------------------
 
 @dataclass
 class ForecastResult:
@@ -20,15 +16,10 @@ class ForecastResult:
     weather: str
     adjustments: list[str] = field(default_factory=list)
 
-    # component scores (for transparency / debugging)
     last_7_days_avg: Optional[float] = None
     same_weekday_avg: Optional[float] = None
     recent_trend: Optional[float] = None
 
-
-# ---------------------------------------------------------------------------
-# Service
-# ---------------------------------------------------------------------------
 
 class ForecastService:
     """
@@ -40,10 +31,13 @@ class ForecastService:
          + (same_weekday_avg * 0.30)
          + (recent_trend     * 0.20)
 
+    Missing components have their weight redistributed proportionally
+    to the remaining available components so weights always sum to 1.
+
     Adjustments applied on top of the base:
       +30%  if the target date is a Saturday or Sunday
       -15%  if weather is rainy
-      -30%  if weather is stormy (future-proof)
+      -30%  if weather is snowy
     """
 
     WEIGHT_LAST_7 = 0.50
@@ -54,13 +48,13 @@ class ForecastService:
     RAIN_PENALTY = 0.15
     SNOWY_PENALTY = 0.30
 
-    TREND_WINDOW = 7     # days used to compute recent trend slope
-    WEEKDAY_LOOKBACK = 8  # how many same-weekday records to average
+    TREND_WINDOW = 7
+    WEEKDAY_LOOKBACK = 8
 
     def __init__(self, target_date: date, weather: str = ""):
         self.target_date = target_date
         self.weather = weather.lower().strip()
-        self.is_weekend = target_date.weekday() >= 5  # Mon=0 … Sun=6
+        self.is_weekend = target_date.weekday() >= 5
 
     # ------------------------------------------------------------------
     # Public API
@@ -69,7 +63,8 @@ class ForecastService:
     def predict(self) -> ForecastResult:
         last_7 = self._last_7_days_avg()
         weekday = self._same_weekday_avg()
-        trend = self._recent_trend()
+        # Pass last_7 so _recent_trend can fall back without a second DB hit
+        trend = self._recent_trend(last_7_fallback=last_7)
 
         base = self._weighted_average(last_7, weekday, trend)
         final, adjustments = self._apply_adjustments(base)
@@ -91,19 +86,11 @@ class ForecastService:
     # ------------------------------------------------------------------
 
     def _last_7_days_avg(self) -> Optional[float]:
-        """
-        Average daily covers over the 7 days immediately before the target.
-        Captures the most recent general traffic level.
-        """
         start = self.target_date - timedelta(days=7)
         end = self.target_date - timedelta(days=1)
-        return self._daily_avg(start, end)
+        return self._daily_total_avg(start, end)
 
     def _same_weekday_avg(self) -> Optional[float]:
-        """
-        Average daily covers for the same weekday over recent weeks.
-        Monday traffic differs from Friday traffic — this corrects for that.
-        """
         dates = [
             self.target_date - timedelta(weeks=i)
             for i in range(1, self.WEEKDAY_LOOKBACK + 1)
@@ -112,29 +99,25 @@ class ForecastService:
             HistoricalCover.objects
             .filter(date__in=dates)
             .values("date")
-            .annotate(daily=Avg("covers"))
-            .aggregate(avg=Avg("daily"))
+            .annotate(daily_total=Sum("covers"))
+            .aggregate(avg=Avg("daily_total"))
         )
         return result["avg"]
 
-    def _recent_trend(self) -> Optional[float]:
-        """
-        Linear trend over the last TREND_WINDOW days.
-        Measures whether covers are growing or shrinking recently.
-        Returns the projected value for tomorrow based on that slope.
-        """
+    def _recent_trend(self, last_7_fallback: Optional[float] = None) -> Optional[float]:
         start = self.target_date - timedelta(days=self.TREND_WINDOW)
         end = self.target_date - timedelta(days=1)
 
         records = list(
             HistoricalCover.objects
             .filter(date__gte=start, date__lte=end)
-            .values("date", "covers")
+            .values("date")
+            .annotate(daily_total=Sum("covers"))
             .order_by("date")
         )
 
         if len(records) < 2:
-            return self._last_7_days_avg()  # fall back if not enough data
+            return last_7_fallback
 
         return self._linear_projection(records)
 
@@ -164,14 +147,14 @@ class ForecastService:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _daily_avg(self, start: date, end: date) -> Optional[float]:
-        """Sum covers per day, then average across days in the range."""
+    def _daily_total_avg(self, start: date, end: date) -> Optional[float]:
+        """Sum covers per day (across all hours), then average across days."""
         result = (
             HistoricalCover.objects
             .filter(date__gte=start, date__lte=end)
             .values("date")
-            .annotate(daily=Avg("covers"))
-            .aggregate(avg=Avg("daily"))
+            .annotate(daily_total=Sum("covers"))
+            .aggregate(avg=Avg("daily_total"))
         )
         return result["avg"]
 
@@ -183,8 +166,8 @@ class ForecastService:
     ) -> float:
         """
         Combine the three components with their weights.
-        If a component has no data, redistribute its weight equally
-        among the available components so the weights always sum to 1.
+        Missing components have their weight redistributed proportionally
+        to the remaining available components so weights always sum to 1.
         """
         components = [
             (last_7, self.WEIGHT_LAST_7),
@@ -202,12 +185,12 @@ class ForecastService:
     @staticmethod
     def _linear_projection(records: list[dict]) -> float:
         """
-        Least-squares linear regression on (day_index, covers) pairs.
+        Least-squares linear regression on (day_index, daily_total) pairs.
         Returns the projected covers for the next day (index = n).
         """
         n = len(records)
         xs = list(range(n))
-        ys = [r["covers"] for r in records]
+        ys = [r["daily_total"] for r in records]
 
         x_mean = sum(xs) / n
         y_mean = sum(ys) / n
@@ -222,4 +205,4 @@ class ForecastService:
         intercept = y_mean - slope * x_mean
 
         projected = slope * n + intercept
-        return max(0.0, projected)  # covers can't be negative
+        return max(0.0, projected)
