@@ -1,4 +1,8 @@
+import logging
+
 from rest_framework import filters, permissions, status, viewsets
+
+logger = logging.getLogger(__name__)
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
@@ -74,6 +78,8 @@ class ForecastAPIView(APIView):
         ]
 
         ingredient_plan = []
+        ingredient_plan_available = True
+        ingredient_plan_error = None
         try:
             ingredient_result = IngredientForecastService.from_database(
                 predicted_covers=total_covers
@@ -92,8 +98,10 @@ class ForecastAPIView(APIView):
                 }
                 for item in ingredient_result.requirements
             ]
-        except ValueError:
-            ingredient_plan = []
+        except ValueError as exc:
+            ingredient_plan_available = False
+            ingredient_plan_error = str(exc)
+            logger.warning("Ingredient forecast unavailable for %s: %s", target_date, exc)
 
         payload = {
             "date": target_date,
@@ -101,6 +109,8 @@ class ForecastAPIView(APIView):
             "hourly_breakdown": hourly_breakdown,
             "staff_plan": staff_plan,
             "ingredient_plan": ingredient_plan,
+            "ingredient_plan_available": ingredient_plan_available,
+            "ingredient_plan_error": ingredient_plan_error,
         }
         response_serializer = ForecastResponseSerializer(payload)
         return Response(response_serializer.data, status=status.HTTP_200_OK)

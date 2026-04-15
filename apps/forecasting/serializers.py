@@ -70,3 +70,5 @@ class ForecastResponseSerializer(serializers.Serializer):
     hourly_breakdown = HourlyBreakdownItemSerializer(many=True)
     staff_plan = StaffPlanHourItemSerializer(many=True)
     ingredient_plan = IngredientPlanItemSerializer(many=True)
+    ingredient_plan_available = serializers.BooleanField()
+    ingredient_plan_error = serializers.CharField(allow_null=True)

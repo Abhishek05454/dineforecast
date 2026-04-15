@@ -64,6 +64,24 @@ class TestForecastEndpoint:
 
         assert payload["ingredient_plan"]
         assert payload["ingredient_plan"][0]["name"] == "beef"
+        assert payload["ingredient_plan_available"] is True
+        assert payload["ingredient_plan_error"] is None
+
+    def test_get_forecast_ingredient_plan_unavailable_when_no_dishes(self, auth_client):
+        target = date(2024, 6, 10)
+        for offset in range(1, 8):
+            day = target - timedelta(days=offset)
+            HistoricalCover.objects.create(
+                date=day, hour=12, covers=100, is_weekend=day.weekday() >= 5,
+            )
+        response = auth_client.get(
+            "/api/v1/forecasting/forecast/", {"date": target.isoformat()}
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["ingredient_plan_available"] is False
+        assert payload["ingredient_plan_error"] is not None
+        assert payload["ingredient_plan"] == []
 
     def test_get_forecast_requires_valid_date(self, auth_client):
         response = auth_client.get("/api/v1/forecasting/forecast/", {"date": "invalid"})
