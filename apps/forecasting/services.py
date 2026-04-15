@@ -6,6 +6,86 @@ from django.db.models import Avg, Sum
 
 from .models import HistoricalCover
 
+DEFAULT_HOURLY_DISTRIBUTION: dict[int, float] = {
+    12: 0.10,
+    13: 0.25,
+    14: 0.20,
+    19: 0.20,
+    20: 0.15,
+    21: 0.10,
+}
+
+
+@dataclass
+class HourlySlot:
+    hour: int
+    covers: int
+    share: float
+
+
+@dataclass
+class HourlyDistributionResult:
+    total_covers: float
+    slots: list[HourlySlot]
+
+    def as_dict(self) -> dict[int, int]:
+        return {slot.hour: slot.covers for slot in self.slots}
+
+
+def distribute_covers_by_hour(
+    total_covers: float,
+    distribution: dict[int, float] | None = None,
+) -> HourlyDistributionResult:
+    """
+    Spread predicted total covers across hours using a share distribution.
+
+    Args:
+        total_covers: The predicted daily covers (from ForecastService).
+        distribution: Map of {hour: share} where all shares must sum to 1.0.
+                      Defaults to DEFAULT_HOURLY_DISTRIBUTION.
+
+    Returns:
+        HourlyDistributionResult with per-hour cover counts.
+
+    Raises:
+        ValueError: if distribution shares do not sum to 1.0 (±0.01 tolerance)
+                    or if any hour is outside 0–23.
+    """
+    if distribution is None:
+        distribution = DEFAULT_HOURLY_DISTRIBUTION
+
+    _validate_distribution(distribution)
+
+    slots = [
+        HourlySlot(
+            hour=hour,
+            covers=round(total_covers * share),
+            share=share,
+        )
+        for hour, share in sorted(distribution.items())
+    ]
+
+    return HourlyDistributionResult(total_covers=total_covers, slots=slots)
+
+
+def _validate_distribution(distribution: dict[int, float]) -> None:
+    if not distribution:
+        raise ValueError("Distribution must not be empty.")
+
+    invalid_hours = [h for h in distribution if not (0 <= h <= 23)]
+    if invalid_hours:
+        raise ValueError(f"Hours out of range 0–23: {invalid_hours}")
+
+    negative_shares = [h for h, s in distribution.items() if s < 0]
+    if negative_shares:
+        raise ValueError(f"Shares must be non-negative. Invalid hours: {negative_shares}")
+
+    total = sum(distribution.values())
+    if abs(total - 1.0) > 0.01:
+        raise ValueError(
+            f"Distribution shares must sum to 1.0 (got {total:.4f})."
+        )
+
 
 @dataclass
 class ForecastResult:
