@@ -1,3 +1,5 @@
+import math
+import numbers
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Optional
@@ -5,6 +7,110 @@ from typing import Optional
 from django.db.models import Avg, Sum
 
 from .models import HistoricalCover
+
+DEFAULT_HOURLY_DISTRIBUTION: dict[int, float] = {
+    12: 0.10,
+    13: 0.25,
+    14: 0.20,
+    19: 0.20,
+    20: 0.15,
+    21: 0.10,
+}
+
+
+@dataclass
+class HourlySlot:
+    hour: int
+    covers: int
+    share: float
+
+
+@dataclass
+class HourlyDistributionResult:
+    total_covers: float
+    slots: list[HourlySlot]
+
+    def as_dict(self) -> dict[int, int]:
+        return {slot.hour: slot.covers for slot in self.slots}
+
+
+def distribute_covers_by_hour(
+    total_covers: float,
+    distribution: dict[int, float] | None = None,
+) -> HourlyDistributionResult:
+    if not math.isfinite(total_covers) or total_covers < 0:
+        raise ValueError(
+            f"total_covers must be a finite non-negative number (got {total_covers!r})."
+        )
+
+    if distribution is None:
+        distribution = DEFAULT_HOURLY_DISTRIBUTION
+
+    _validate_distribution(distribution)
+
+    raw_total = sum(distribution.values())
+    normalized = {h: s / raw_total for h, s in distribution.items()}
+
+    sorted_items = sorted(normalized.items())
+    slots = _allocate_covers(total_covers, sorted_items)
+
+    return HourlyDistributionResult(total_covers=total_covers, slots=slots)
+
+
+def _allocate_covers(
+    total_covers: float,
+    sorted_items: list[tuple[int, float]],
+) -> list[HourlySlot]:
+    target = round(total_covers)
+    floored = [(hour, share, math.floor(total_covers * share)) for hour, share in sorted_items]
+    allocated = sum(c for _, _, c in floored)
+    remainder = target - allocated
+
+    fractional_parts = [
+        (total_covers * share) - covers
+        for _, share, covers in floored
+    ]
+    descending = sorted(range(len(floored)), key=lambda i: fractional_parts[i], reverse=True)
+
+    covers_list = [c for _, _, c in floored]
+    for i in range(remainder):
+        covers_list[descending[i]] += 1
+
+    return [
+        HourlySlot(hour=hour, covers=covers_list[idx], share=share)
+        for idx, (hour, share, _) in enumerate(floored)
+    ]
+
+
+def _validate_distribution(distribution: dict[int, float]) -> None:
+    if not distribution:
+        raise ValueError("Distribution must not be empty.")
+
+    invalid_hour_types = [h for h in distribution if not isinstance(h, int) or isinstance(h, bool)]
+    if invalid_hour_types:
+        raise ValueError(f"Hour keys must be plain integers: {invalid_hour_types}")
+
+    invalid_hours = [h for h in distribution if not (0 <= h <= 23)]
+    if invalid_hours:
+        raise ValueError(f"Hours out of range 0–23: {invalid_hours}")
+
+    non_numeric_shares = [h for h, s in distribution.items() if not isinstance(s, numbers.Real) or isinstance(s, bool)]
+    if non_numeric_shares:
+        raise ValueError(f"Shares must be finite real numbers. Invalid hours: {non_numeric_shares}")
+
+    non_finite_shares = [h for h, s in distribution.items() if not math.isfinite(s)]
+    if non_finite_shares:
+        raise ValueError(f"Shares must be finite real numbers. Invalid hours: {non_finite_shares}")
+
+    negative_shares = [h for h, s in distribution.items() if s < 0]
+    if negative_shares:
+        raise ValueError(f"Shares must be non-negative. Invalid hours: {negative_shares}")
+
+    total = sum(distribution.values())
+    if abs(total - 1.0) > 0.01:
+        raise ValueError(
+            f"Distribution shares must sum to 1.0 (got {total:.4f})."
+        )
 
 
 @dataclass
@@ -22,23 +128,6 @@ class ForecastResult:
 
 
 class ForecastService:
-    """
-    Predicts total covers (number of customers) for a given date.
-
-    Weighted average formula
-    ------------------------
-    base = (last_7_days_avg * 0.50)
-         + (same_weekday_avg * 0.30)
-         + (recent_trend     * 0.20)
-
-    Missing components have their weight redistributed proportionally
-    to the remaining available components so weights always sum to 1.
-
-    Adjustments applied on top of the base:
-      +30%  if the target date is a Saturday or Sunday
-      -15%  if weather is rainy
-      -30%  if weather is snowy
-    """
 
     WEIGHT_LAST_7 = 0.50
     WEIGHT_WEEKDAY = 0.30
@@ -56,14 +145,9 @@ class ForecastService:
         self.weather = weather.lower().strip()
         self.is_weekend = target_date.weekday() >= 5
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
     def predict(self) -> ForecastResult:
         last_7 = self._last_7_days_avg()
         weekday = self._same_weekday_avg()
-        # Pass last_7 so _recent_trend can fall back without a second DB hit
         trend = self._recent_trend(last_7_fallback=last_7)
 
         base = self._weighted_average(last_7, weekday, trend)
@@ -80,10 +164,6 @@ class ForecastService:
             same_weekday_avg=round(weekday, 2) if weekday is not None else None,
             recent_trend=round(trend, 2) if trend is not None else None,
         )
-
-    # ------------------------------------------------------------------
-    # Components
-    # ------------------------------------------------------------------
 
     def _last_7_days_avg(self) -> Optional[float]:
         start = self.target_date - timedelta(days=7)
@@ -121,10 +201,6 @@ class ForecastService:
 
         return self._linear_projection(records)
 
-    # ------------------------------------------------------------------
-    # Adjustments
-    # ------------------------------------------------------------------
-
     def _apply_adjustments(self, base: float) -> tuple[float, list[str]]:
         value = base
         applied = []
@@ -143,12 +219,7 @@ class ForecastService:
 
         return value, applied
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
     def _daily_total_avg(self, start: date, end: date) -> Optional[float]:
-        """Sum covers per day (across all hours), then average across days."""
         result = (
             HistoricalCover.objects
             .filter(date__gte=start, date__lte=end)
@@ -164,11 +235,6 @@ class ForecastService:
         weekday: Optional[float],
         trend: Optional[float],
     ) -> float:
-        """
-        Combine the three components with their weights.
-        Missing components have their weight redistributed proportionally
-        to the remaining available components so weights always sum to 1.
-        """
         components = [
             (last_7, self.WEIGHT_LAST_7),
             (weekday, self.WEIGHT_WEEKDAY),
@@ -184,11 +250,6 @@ class ForecastService:
 
     @staticmethod
     def _linear_projection(records: list[dict]) -> float:
-        """
-        Least-squares linear regression using actual calendar day ordinals as
-        the x-axis so gaps in historical data are correctly represented.
-        Projects covers for the day after the last record.
-        """
         first_ordinal = records[0]["date"].toordinal()
         xs = [r["date"].toordinal() - first_ordinal for r in records]
         ys = [r["daily_total"] for r in records]
