@@ -87,28 +87,19 @@ class TestForecastEndpoint:
 
     def test_second_request_served_from_cache(self, auth_client):
         target = date(2024, 6, 10)
-        for offset in range(1, 8):
-            day = target - timedelta(days=offset)
-            HistoricalCover.objects.create(
-                date=day, hour=12, covers=100, is_weekend=day.weekday() >= 5,
-            )
-        with patch("apps.forecasting.views.ForecastService") as mock_svc:
-            mock_svc.return_value.predict.return_value.final_prediction = 100
-            mock_svc.return_value.predict.return_value.base_prediction = 100
-            mock_svc.return_value.predict.return_value.is_weekend = False
-            mock_svc.return_value.predict.return_value.weather = ""
-            mock_svc.return_value.predict.return_value.adjustments = []
-            mock_svc.return_value.predict.return_value.last_7_days_avg = 100.0
-            mock_svc.return_value.predict.return_value.same_weekday_avg = None
-            mock_svc.return_value.predict.return_value.recent_trend = None
-            mock_svc.return_value.predict.return_value.feedback_adjustment_factor = 1.0
-            mock_svc.return_value.predict.return_value.feedback_samples = 0
-            mock_svc.return_value.predict.return_value.learning_rate = 0.0
-            mock_svc.return_value.predict.return_value.component_weights = {}
-
+        sample_payload = {
+            "date": target.isoformat(),
+            "total_covers": 100,
+            "hourly_breakdown": [],
+            "staff_plan": [],
+            "ingredient_plan": [],
+            "ingredient_plan_available": True,
+            "ingredient_plan_error": None,
+        }
+        with patch("apps.forecasting.views._build_forecast_payload", return_value=sample_payload) as mock_build:
             auth_client.get("/api/v1/forecasting/forecast/", {"date": target.isoformat()})
             auth_client.get("/api/v1/forecasting/forecast/", {"date": target.isoformat()})
-            assert mock_svc.return_value.predict.call_count == 1
+            assert mock_build.call_count == 1
 
     def test_feedback_submission_invalidates_forecast_cache(self, auth_client):
         target = date(2024, 6, 10)
