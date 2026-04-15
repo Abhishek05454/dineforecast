@@ -6,6 +6,7 @@ from typing import Iterable, Mapping, Optional
 
 from django.db.models import Avg, Sum
 
+from apps.feedback.services import ForecastFeedbackService
 from apps.operations.models import Ingredient
 from .models import DishPopularity, HistoricalCover, StaffRole
 
@@ -129,6 +130,10 @@ class ForecastResult:
     last_7_days_avg: Optional[float] = None
     same_weekday_avg: Optional[float] = None
     recent_trend: Optional[float] = None
+    feedback_adjustment_factor: float = 1.0
+    learning_rate: float = 0.0
+    feedback_samples: int = 0
+    component_weights: dict[str, float] = field(default_factory=dict)
 
 
 class ForecastService:
@@ -150,12 +155,31 @@ class ForecastService:
         self.is_weekend = target_date.weekday() >= 5
 
     def predict(self) -> ForecastResult:
+        feedback_snapshot = ForecastFeedbackService(
+            base_weights={
+                "last_7": self.WEIGHT_LAST_7,
+                "weekday": self.WEIGHT_WEEKDAY,
+                "trend": self.WEIGHT_TREND,
+            }
+        ).build_snapshot(as_of=self.target_date)
+
         last_7 = self._last_7_days_avg()
         weekday = self._same_weekday_avg()
         trend = self._recent_trend(last_7_fallback=last_7)
 
-        base = self._weighted_average(last_7, weekday, trend)
+        base = self._weighted_average(
+            last_7,
+            weekday,
+            trend,
+            weights=feedback_snapshot.weights,
+        )
         final, adjustments = self._apply_adjustments(base)
+
+        if feedback_snapshot.sample_size > 0:
+            final *= feedback_snapshot.adjustment_factor
+            adjustment_pct = (feedback_snapshot.adjustment_factor - 1) * 100
+            if abs(adjustment_pct) >= 0.1:
+                adjustments.append(f"feedback {adjustment_pct:+.1f}%")
 
         return ForecastResult(
             target_date=self.target_date,
@@ -167,6 +191,13 @@ class ForecastService:
             last_7_days_avg=round(last_7, 2) if last_7 is not None else None,
             same_weekday_avg=round(weekday, 2) if weekday is not None else None,
             recent_trend=round(trend, 2) if trend is not None else None,
+            feedback_adjustment_factor=round(feedback_snapshot.adjustment_factor, 4),
+            learning_rate=round(feedback_snapshot.learning_rate, 4),
+            feedback_samples=feedback_snapshot.sample_size,
+            component_weights={
+                key: round(value, 4)
+                for key, value in feedback_snapshot.weights.items()
+            },
         )
 
     def _last_7_days_avg(self) -> Optional[float]:
@@ -238,11 +269,17 @@ class ForecastService:
         last_7: Optional[float],
         weekday: Optional[float],
         trend: Optional[float],
+        weights: Mapping[str, float] | None = None,
     ) -> float:
+        active_weights = weights or {
+            "last_7": self.WEIGHT_LAST_7,
+            "weekday": self.WEIGHT_WEEKDAY,
+            "trend": self.WEIGHT_TREND,
+        }
         components = [
-            (last_7, self.WEIGHT_LAST_7),
-            (weekday, self.WEIGHT_WEEKDAY),
-            (trend, self.WEIGHT_TREND),
+            (last_7, active_weights["last_7"]),
+            (weekday, active_weights["weekday"]),
+            (trend, active_weights["trend"]),
         ]
         available = [(v, w) for v, w in components if v is not None]
 
