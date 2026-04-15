@@ -47,7 +47,7 @@ class ForecastFeedbackService:
         predicted_covers: int,
         actual_covers: int,
         reason: str = "",
-    ) -> ForecastAccuracy:
+    ) -> tuple[ForecastAccuracy, bool]:
         if predicted_covers < 0 or actual_covers < 0:
             raise ValueError("predicted_covers and actual_covers must be non-negative.")
         row, created = ForecastAccuracy.objects.update_or_create(

@@ -33,5 +33,5 @@ class ForecastFeedbackResponseSerializer(serializers.Serializer):
     predicted = serializers.IntegerField(min_value=0)
     actual = serializers.IntegerField(min_value=0)
     error = serializers.IntegerField()
-    error_percentage = serializers.FloatField()
+    error_percentage = serializers.FloatField(allow_null=True)
     reason = serializers.CharField()

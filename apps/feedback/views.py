@@ -49,7 +49,10 @@ class ForecastFeedbackAPIView(APIView):
         )
 
         error = actual - predicted
-        error_percentage = round((error / max(predicted, 1)) * 100, 2)
+        if predicted == 0:
+            error_percentage = 0.0 if actual == 0 else None
+        else:
+            error_percentage = round((error / predicted) * 100, 2)
 
         response_payload = {
             "date": record.date,

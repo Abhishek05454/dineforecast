@@ -129,6 +129,24 @@ class TestFeedbackEndpoint:
         )
         assert response.status_code == 400
 
+    def test_post_feedback_zero_predicted_zero_actual_returns_zero_percentage(self, auth_client):
+        response = auth_client.post(
+            "/api/v1/feedback/forecast/",
+            {"date": "2024-06-08", "predicted": 0, "actual": 0},
+            format="json",
+        )
+        assert response.status_code == 201
+        assert response.json()["error_percentage"] == 0.0
+
+    def test_post_feedback_zero_predicted_nonzero_actual_returns_null_percentage(self, auth_client):
+        response = auth_client.post(
+            "/api/v1/feedback/forecast/",
+            {"date": "2024-06-07", "predicted": 0, "actual": 50},
+            format="json",
+        )
+        assert response.status_code == 201
+        assert response.json()["error_percentage"] is None
+
     def test_post_feedback_requires_authentication(self):
         client = APIClient()
         response = client.post(
