@@ -404,6 +404,10 @@ class IngredientForecastService:
             d.dish_name: float(d.average_orders_percentage)
             for d in DishPopularity.objects.all()
         }
+        if not dish_popularity:
+            raise ValueError(
+                "No DishPopularity rows found. Configure dish popularity before forecasting ingredients."
+            )
         ingredients = list(Ingredient.objects.all())
         recipe_lines: list[IngredientPerDishInput] = []
         for dish_name in dish_popularity:
@@ -535,6 +539,19 @@ class IngredientForecastService:
             if not math.isfinite(float(line.quantity_per_dish)) or line.quantity_per_dish < 0:
                 raise ValueError(
                     f"quantity_per_dish must be finite and non-negative for ingredient {line.ingredient_name!r}."
+                )
+            if not isinstance(line.unit, str) or not line.unit.strip():
+                raise ValueError(
+                    f"unit must be a non-empty string for ingredient {line.ingredient_name!r}."
+                )
+            if (
+                not isinstance(line.shelf_life_days, int)
+                or isinstance(line.shelf_life_days, bool)
+                or not isinstance(line.supplier_lead_time_days, int)
+                or isinstance(line.supplier_lead_time_days, bool)
+            ):
+                raise ValueError(
+                    f"shelf_life_days and supplier_lead_time_days must be plain integers for ingredient {line.ingredient_name!r}."
                 )
             if line.shelf_life_days < 0 or line.supplier_lead_time_days < 0:
                 raise ValueError(

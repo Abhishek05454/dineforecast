@@ -155,6 +155,10 @@ class TestOrderDaysAhead:
 
 @pytest.mark.django_db
 class TestFromDatabaseFactory:
+    def test_raises_when_no_dish_popularity_in_db(self):
+        with pytest.raises(ValueError, match="No DishPopularity rows"):
+            IngredientForecastService.from_database(predicted_covers=100)
+
     def test_builds_service_from_existing_models(self):
         _make_dish("burger", 100.0)
         _make_ingredient("beef", qty_per_dish=0.2, shelf_life=3, lead_time=2)
@@ -221,5 +225,35 @@ class TestIngredientForecastServiceValidation:
                 ingredient_per_dish=[
                     IngredientPerDishInput("burger", "salt", 0.01, "kg", 365, 7),
                     IngredientPerDishInput("pasta", "salt", 0.02, "litre", 365, 7),
+                ],
+            )
+
+    def test_raises_on_empty_unit(self):
+        with pytest.raises(ValueError, match="unit must be a non-empty string"):
+            IngredientForecastService(
+                predicted_covers=100,
+                dish_popularity={"burger": 100},
+                ingredient_per_dish=[
+                    IngredientPerDishInput("burger", "beef", 0.2, "", 3, 2),
+                ],
+            )
+
+    def test_raises_on_bool_shelf_life_days(self):
+        with pytest.raises(ValueError, match="plain integers"):
+            IngredientForecastService(
+                predicted_covers=100,
+                dish_popularity={"burger": 100},
+                ingredient_per_dish=[
+                    IngredientPerDishInput("burger", "beef", 0.2, "kg", True, 2),
+                ],
+            )
+
+    def test_raises_on_negative_shelf_life_days(self):
+        with pytest.raises(ValueError, match="non-negative"):
+            IngredientForecastService(
+                predicted_covers=100,
+                dish_popularity={"burger": 100},
+                ingredient_per_dish=[
+                    IngredientPerDishInput("burger", "beef", 0.2, "kg", -1, 2),
                 ],
             )
