@@ -1,4 +1,5 @@
 import math
+import numbers
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Optional
@@ -51,7 +52,7 @@ def distribute_covers_by_hour(
     normalized = {h: s / raw_total for h, s in distribution.items()}
 
     sorted_items = sorted(normalized.items())
-    slots = _allocate_covers(total_covers, sorted_items, original_shares=dict(distribution))
+    slots = _allocate_covers(total_covers, sorted_items)
 
     return HourlyDistributionResult(total_covers=total_covers, slots=slots)
 
@@ -59,7 +60,6 @@ def distribute_covers_by_hour(
 def _allocate_covers(
     total_covers: float,
     sorted_items: list[tuple[int, float]],
-    original_shares: dict[int, float],
 ) -> list[HourlySlot]:
     target = round(total_covers)
     floored = [(hour, share, math.floor(total_covers * share)) for hour, share in sorted_items]
@@ -71,19 +71,14 @@ def _allocate_covers(
         for _, share, covers in floored
     ]
     descending = sorted(range(len(floored)), key=lambda i: fractional_parts[i], reverse=True)
-    ascending = sorted(range(len(floored)), key=lambda i: fractional_parts[i])
 
     covers_list = [c for _, _, c in floored]
-    if remainder > 0:
-        for i in range(remainder):
-            covers_list[descending[i]] += 1
-    elif remainder < 0:
-        for i in range(-remainder):
-            covers_list[ascending[i]] -= 1
+    for i in range(remainder):
+        covers_list[descending[i]] += 1
 
     return [
-        HourlySlot(hour=hour, covers=covers_list[idx], share=original_shares[hour])
-        for idx, (hour, _, _) in enumerate(floored)
+        HourlySlot(hour=hour, covers=covers_list[idx], share=share)
+        for idx, (hour, share, _) in enumerate(floored)
     ]
 
 
@@ -91,9 +86,17 @@ def _validate_distribution(distribution: dict[int, float]) -> None:
     if not distribution:
         raise ValueError("Distribution must not be empty.")
 
+    invalid_hour_types = [h for h in distribution if not isinstance(h, int) or isinstance(h, bool)]
+    if invalid_hour_types:
+        raise ValueError(f"Hour keys must be plain integers: {invalid_hour_types}")
+
     invalid_hours = [h for h in distribution if not (0 <= h <= 23)]
     if invalid_hours:
         raise ValueError(f"Hours out of range 0–23: {invalid_hours}")
+
+    non_numeric_shares = [h for h, s in distribution.items() if not isinstance(s, numbers.Real) or isinstance(s, bool)]
+    if non_numeric_shares:
+        raise ValueError(f"Shares must be finite real numbers. Invalid hours: {non_numeric_shares}")
 
     non_finite_shares = [h for h, s in distribution.items() if not math.isfinite(s)]
     if non_finite_shares:

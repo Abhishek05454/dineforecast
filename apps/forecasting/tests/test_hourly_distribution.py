@@ -108,3 +108,15 @@ class TestValidateDistribution:
     def test_raises_on_empty_distribution(self):
         with pytest.raises(ValueError, match="empty"):
             distribute_covers_by_hour(100, distribution={})
+
+    def test_raises_on_float_hour_key(self):
+        with pytest.raises(ValueError, match="plain integers"):
+            distribute_covers_by_hour(100, distribution={12.5: 0.5, 13: 0.5})
+
+    def test_raises_on_bool_hour_key(self):
+        with pytest.raises(ValueError, match="plain integers"):
+            distribute_covers_by_hour(100, distribution={True: 0.5, 13: 0.5})
+
+    def test_raises_on_string_share(self):
+        with pytest.raises(ValueError, match="finite real numbers"):
+            distribute_covers_by_hour(100, distribution={12: "0.5", 13: 0.5})
