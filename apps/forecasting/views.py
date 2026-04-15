@@ -33,7 +33,7 @@ class StaffingRequirementViewSet(viewsets.ModelViewSet):
 
 
 class ForecastAPIView(APIView):
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         query_serializer = ForecastQuerySerializer(data=request.query_params)

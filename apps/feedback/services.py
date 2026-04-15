@@ -50,7 +50,7 @@ class ForecastFeedbackService:
     ) -> ForecastAccuracy:
         if predicted_covers < 0 or actual_covers < 0:
             raise ValueError("predicted_covers and actual_covers must be non-negative.")
-        row, _ = ForecastAccuracy.objects.update_or_create(
+        row, created = ForecastAccuracy.objects.update_or_create(
             date=forecast_date,
             defaults={
                 "predicted_covers": predicted_covers,
@@ -58,7 +58,7 @@ class ForecastFeedbackService:
                 "reason": reason,
             },
         )
-        return row
+        return row, created
 
     def build_snapshot(self, as_of: date) -> FeedbackLearningSnapshot:
         window_start = as_of - timedelta(days=self.lookback_days)

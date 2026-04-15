@@ -31,7 +31,7 @@ class FeedbackResponseViewSet(viewsets.ModelViewSet):
 
 
 class ForecastFeedbackAPIView(APIView):
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
         serializer = ForecastFeedbackCreateSerializer(data=request.data)
@@ -41,7 +41,7 @@ class ForecastFeedbackAPIView(APIView):
         actual = serializer.validated_data["actual"]
         reason = serializer.validated_data.get("reason", "")
         feedback_date = serializer.validated_data["date"] or date.today()
-        record = ForecastFeedbackService.record_feedback(
+        record, created = ForecastFeedbackService.record_feedback(
             forecast_date=feedback_date,
             predicted_covers=predicted,
             actual_covers=actual,
@@ -60,4 +60,5 @@ class ForecastFeedbackAPIView(APIView):
             "reason": record.reason,
         }
         response_serializer = ForecastFeedbackResponseSerializer(response_payload)
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        http_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response(response_serializer.data, status=http_status)

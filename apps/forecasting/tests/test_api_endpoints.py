@@ -1,16 +1,27 @@
 from datetime import date, timedelta
 
 import pytest
+from django.contrib.auth.models import User
 from rest_framework.test import APIClient
+
+pytestmark = pytest.mark.django_db
 
 from apps.feedback.models import ForecastAccuracy
 from apps.forecasting.models import DishPopularity, HistoricalCover, StaffRole
 from apps.operations.models import Ingredient
 
 
+@pytest.fixture
+def auth_client(db):
+    user = User.objects.create_user(username="tester", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    return client
+
+
 @pytest.mark.django_db
 class TestForecastEndpoint:
-    def test_get_forecast_returns_aggregated_plan(self):
+    def test_get_forecast_returns_aggregated_plan(self, auth_client):
         target = date(2024, 6, 10)
 
         for offset in range(1, 8):
@@ -34,8 +45,9 @@ class TestForecastEndpoint:
             supplier_lead_time_days=2,
         )
 
-        client = APIClient()
-        response = client.get("/forecast/", {"date": target.isoformat()}, secure=True)
+        response = auth_client.get(
+            "/api/v1/forecasting/forecast/", {"date": target.isoformat()}
+        )
 
         assert response.status_code == 200
         payload = response.json()
@@ -53,21 +65,23 @@ class TestForecastEndpoint:
         assert payload["ingredient_plan"]
         assert payload["ingredient_plan"][0]["name"] == "beef"
 
-    def test_get_forecast_requires_valid_date(self):
-        client = APIClient()
-        response = client.get("/forecast/", {"date": "invalid"}, secure=True)
+    def test_get_forecast_requires_valid_date(self, auth_client):
+        response = auth_client.get("/api/v1/forecasting/forecast/", {"date": "invalid"})
         assert response.status_code == 400
+
+    def test_get_forecast_requires_authentication(self):
+        client = APIClient()
+        response = client.get("/api/v1/forecasting/forecast/", {"date": "2024-06-10"})
+        assert response.status_code == 401
 
 
 @pytest.mark.django_db
 class TestFeedbackEndpoint:
-    def test_post_feedback_records_error(self):
-        client = APIClient()
-        response = client.post(
-            "/feedback/",
+    def test_post_feedback_records_error(self, auth_client):
+        response = auth_client.post(
+            "/api/v1/feedback/forecast/",
             {"predicted": 100, "actual": 120, "reason": "walk-ins"},
             format="json",
-            secure=True,
         )
 
         assert response.status_code == 201
@@ -84,24 +98,42 @@ class TestFeedbackEndpoint:
             actual_covers=120,
         ).exists()
 
-    def test_post_feedback_accepts_explicit_date(self):
-        client = APIClient()
-        response = client.post(
-            "/feedback/",
+    def test_post_feedback_returns_200_on_update(self, auth_client):
+        ForecastAccuracy.objects.create(
+            date="2024-06-09",
+            predicted_covers=90,
+            actual_covers=100,
+        )
+        response = auth_client.post(
+            "/api/v1/feedback/forecast/",
+            {"date": "2024-06-09", "predicted": 100, "actual": 110, "reason": "updated"},
+            format="json",
+        )
+        assert response.status_code == 200
+
+    def test_post_feedback_accepts_explicit_date(self, auth_client):
+        response = auth_client.post(
+            "/api/v1/feedback/forecast/",
             {"date": "2024-06-09", "predicted": 100, "actual": 110, "reason": "event"},
             format="json",
-            secure=True,
         )
         assert response.status_code == 201
         assert response.json()["date"] == "2024-06-09"
         assert ForecastAccuracy.objects.filter(date="2024-06-09").exists()
 
-    def test_post_feedback_validates_non_negative_input(self):
-        client = APIClient()
-        response = client.post(
-            "/feedback/",
+    def test_post_feedback_validates_non_negative_input(self, auth_client):
+        response = auth_client.post(
+            "/api/v1/feedback/forecast/",
             {"predicted": -1, "actual": 120, "reason": "bad input"},
             format="json",
-            secure=True,
         )
         assert response.status_code == 400
+
+    def test_post_feedback_requires_authentication(self):
+        client = APIClient()
+        response = client.post(
+            "/api/v1/feedback/forecast/",
+            {"predicted": 100, "actual": 120},
+            format="json",
+        )
+        assert response.status_code == 401
