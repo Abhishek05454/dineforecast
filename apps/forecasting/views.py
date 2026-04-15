@@ -1,11 +1,13 @@
 import logging
 
+from django.core.cache import cache
+from django.conf import settings
 from rest_framework import filters, permissions, status, viewsets
-
-logger = logging.getLogger(__name__)
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
+
+logger = logging.getLogger(__name__)
 from .models import DemandForecast, StaffingRequirement
 from .serializers import (
     DemandForecastSerializer,
@@ -44,6 +46,13 @@ class ForecastAPIView(APIView):
         query_serializer.is_valid(raise_exception=True)
         target_date = query_serializer.validated_data["date"]
 
+        cache_key = f"forecast:{target_date.isoformat()}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            logger.debug("Forecast cache hit for %s", target_date)
+            return Response(cached, status=status.HTTP_200_OK)
+
+        logger.debug("Forecast cache miss for %s", target_date)
         forecast_result = ForecastService(target_date=target_date).predict()
         total_covers = max(0, round(forecast_result.final_prediction))
 
@@ -113,4 +122,6 @@ class ForecastAPIView(APIView):
             "ingredient_plan_error": ingredient_plan_error,
         }
         response_serializer = ForecastResponseSerializer(payload)
-        return Response(response_serializer.data, status=status.HTTP_200_OK)
+        serialized = response_serializer.data
+        cache.set(cache_key, serialized, timeout=getattr(settings, "FORECAST_CACHE_TTL", 60 * 60 * 6))
+        return Response(serialized, status=status.HTTP_200_OK)
