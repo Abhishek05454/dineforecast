@@ -94,7 +94,7 @@ class TestValidateDistribution:
         assert sum(s.covers for s in result.slots) == round(result.total_covers)
 
     def test_raises_when_hour_out_of_range(self):
-        with pytest.raises(ValueError, match="out of range"):
+        with pytest.raises(ValueError, match="range 0-23"):
             distribute_covers_by_hour(100, distribution={25: 0.5, 13: 0.5})
 
     def test_raises_on_nan_share(self):

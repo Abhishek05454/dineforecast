@@ -5,7 +5,7 @@ from apps.forecasting.services import StaffPlanningService
 
 
 def _make_role(role: str, covers_per_staff: int):
-    StaffRole.objects.get_or_create(role=role, defaults={"covers_per_staff": covers_per_staff})
+    StaffRole.objects.update_or_create(role=role, defaults={"covers_per_staff": covers_per_staff})
 
 
 # ---------------------------------------------------------------------------
