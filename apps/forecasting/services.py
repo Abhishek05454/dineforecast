@@ -6,7 +6,7 @@ from typing import Optional
 
 from django.db.models import Avg, Sum
 
-from .models import HistoricalCover
+from .models import HistoricalCover, StaffRole
 
 DEFAULT_HOURLY_DISTRIBUTION: dict[int, float] = {
     12: 0.10,
@@ -270,3 +270,61 @@ class ForecastService:
         next_day_ordinal = records[-1]["date"].toordinal() + 1 - first_ordinal
         projected = slope * next_day_ordinal + intercept
         return max(0.0, projected)
+
+
+@dataclass
+class RoleRequirement:
+    role: str
+    covers_per_staff: int
+    staff_required: int
+
+
+@dataclass
+class HourlyStaffingResult:
+    hour: int
+    covers: int
+    roles: list[RoleRequirement]
+
+    def total_staff(self) -> int:
+        return sum(r.staff_required for r in self.roles)
+
+
+@dataclass
+class StaffPlanResult:
+    hours: list[HourlyStaffingResult]
+
+    def as_dict(self) -> dict[int, dict[str, int]]:
+        return {
+            h.hour: {r.role: r.staff_required for r in h.roles}
+            for h in self.hours
+        }
+
+
+class StaffPlanningService:
+
+    def __init__(self, covers_by_hour: dict[int, int]):
+        if not covers_by_hour:
+            raise ValueError("covers_by_hour must not be empty.")
+        invalid = [h for h in covers_by_hour if not isinstance(h, int) or isinstance(h, bool)]
+        if invalid:
+            raise ValueError(f"Hour keys must be plain integers: {invalid}")
+        negative = [h for h, c in covers_by_hour.items() if c < 0]
+        if negative:
+            raise ValueError(f"Cover counts must be non-negative. Invalid hours: {negative}")
+        self.covers_by_hour = covers_by_hour
+
+    def plan(self) -> StaffPlanResult:
+        roles = list(StaffRole.objects.all())
+        hours = []
+        for hour in sorted(self.covers_by_hour):
+            covers = self.covers_by_hour[hour]
+            role_reqs = [
+                RoleRequirement(
+                    role=r.role,
+                    covers_per_staff=r.covers_per_staff,
+                    staff_required=math.ceil(covers / r.covers_per_staff) if covers > 0 else 0,
+                )
+                for r in roles
+            ]
+            hours.append(HourlyStaffingResult(hour=hour, covers=covers, roles=role_reqs))
+        return StaffPlanResult(hours=hours)
