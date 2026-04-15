@@ -27,14 +27,16 @@ class TestWeightedAverage:
         result = svc.predict()
         assert result.final_prediction == 0.0
 
-    def test_uses_only_last7_when_no_weekday_history(self):
+    def test_weight_redistribution_with_only_last7(self):
         target = date(2024, 6, 10)
-        # offsets 1–6 only — offset 7 would be same weekday and feed _same_weekday_avg
-        _make_covers(target, {1: 100, 2: 100, 3: 100, 4: 100, 5: 100, 6: 100})
+        # Only 1 prior day — enough for last_7_days_avg but not for trend (needs ≥2)
+        # Offset 7 intentionally absent so same_weekday_avg stays unavailable.
+        _make_covers(target, {1: 100})
         svc = ForecastService(target)
         result = svc.predict()
-        assert result.base_prediction > 0
         assert result.same_weekday_avg is None
+        # With only last_7 available, all weight redistributes to it → base == last_7
+        assert result.base_prediction == result.last_7_days_avg
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +121,17 @@ class TestLinearProjection:
         records = [{"date": date(2024, 1, i), "daily_total": i * 10} for i in range(1, 8)]
         projected = ForecastService._linear_projection(records)
         assert projected > records[-1]["daily_total"]
+
+    def test_gap_in_dates_handled_correctly(self):
+        # Days 1, 2, then a 5-day gap to day 8 — slope should reflect real calendar distance
+        records = [
+            {"date": date(2024, 1, 1), "daily_total": 100},
+            {"date": date(2024, 1, 2), "daily_total": 110},
+            {"date": date(2024, 1, 8), "daily_total": 170},
+        ]
+        projected = ForecastService._linear_projection(records)
+        # Trend is upward; projection for Jan 9 should be above 170
+        assert projected > 170
 
     def test_downward_trend_clamped_to_zero(self):
         records = [{"date": date(2024, 1, i), "daily_total": max(0, 50 - i * 10)} for i in range(1, 6)]

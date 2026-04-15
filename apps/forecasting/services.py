@@ -185,12 +185,14 @@ class ForecastService:
     @staticmethod
     def _linear_projection(records: list[dict]) -> float:
         """
-        Least-squares linear regression on (day_index, daily_total) pairs.
-        Returns the projected covers for the next day (index = n).
+        Least-squares linear regression using actual calendar day ordinals as
+        the x-axis so gaps in historical data are correctly represented.
+        Projects covers for the day after the last record.
         """
-        n = len(records)
-        xs = list(range(n))
+        first_ordinal = records[0]["date"].toordinal()
+        xs = [r["date"].toordinal() - first_ordinal for r in records]
         ys = [r["daily_total"] for r in records]
+        n = len(records)
 
         x_mean = sum(xs) / n
         y_mean = sum(ys) / n
@@ -204,5 +206,6 @@ class ForecastService:
         slope = numerator / denominator
         intercept = y_mean - slope * x_mean
 
-        projected = slope * n + intercept
+        next_day_ordinal = records[-1]["date"].toordinal() + 1 - first_ordinal
+        projected = slope * next_day_ordinal + intercept
         return max(0.0, projected)
