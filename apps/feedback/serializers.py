@@ -19,3 +19,19 @@ class GuestFeedbackSerializer(serializers.ModelSerializer):
             "guest_name", "is_resolved", "response", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class ForecastFeedbackCreateSerializer(serializers.Serializer):
+    date = serializers.DateField(required=False, default=None)
+    predicted = serializers.IntegerField(min_value=0)
+    actual = serializers.IntegerField(min_value=0)
+    reason = serializers.CharField(allow_blank=True, required=False, default="")
+
+
+class ForecastFeedbackResponseSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    predicted = serializers.IntegerField(min_value=0)
+    actual = serializers.IntegerField(min_value=0)
+    error = serializers.IntegerField()
+    error_percentage = serializers.FloatField()
+    reason = serializers.CharField()
