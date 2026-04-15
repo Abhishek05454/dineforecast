@@ -305,16 +305,22 @@ class StaffPlanningService:
     def __init__(self, covers_by_hour: dict[int, int]):
         if not covers_by_hour:
             raise ValueError("covers_by_hour must not be empty.")
-        invalid = [h for h in covers_by_hour if not isinstance(h, int) or isinstance(h, bool)]
-        if invalid:
-            raise ValueError(f"Hour keys must be plain integers: {invalid}")
+        invalid_keys = [h for h in covers_by_hour if not isinstance(h, int) or isinstance(h, bool)]
+        if invalid_keys:
+            raise ValueError(f"Hour keys must be plain integers: {invalid_keys}")
+        out_of_range = [h for h in covers_by_hour if h < 0 or h > 23]
+        if out_of_range:
+            raise ValueError(f"Hour keys must be in the range 0-23: {out_of_range}")
+        invalid_covers = [h for h, c in covers_by_hour.items() if not isinstance(c, int) or isinstance(c, bool)]
+        if invalid_covers:
+            raise ValueError(f"Cover counts must be plain integers. Invalid hours: {invalid_covers}")
         negative = [h for h, c in covers_by_hour.items() if c < 0]
         if negative:
             raise ValueError(f"Cover counts must be non-negative. Invalid hours: {negative}")
         self.covers_by_hour = covers_by_hour
 
     def plan(self) -> StaffPlanResult:
-        roles = list(StaffRole.objects.all())
+        roles = list(StaffRole.objects.filter(covers_per_staff__gt=0))
         hours = []
         for hour in sorted(self.covers_by_hour):
             covers = self.covers_by_hour[hour]

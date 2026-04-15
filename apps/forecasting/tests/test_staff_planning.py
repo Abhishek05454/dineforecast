@@ -76,6 +76,14 @@ class TestStaffPlanningService:
         result = StaffPlanningService({12: 50}).plan()
         assert result.hours[0].roles == []
 
+    def test_role_with_zero_covers_per_staff_is_excluded(self):
+        StaffRole.objects.get_or_create(role="cashier", defaults={"covers_per_staff": 0})
+        _make_role("waiter", 10)
+        result = StaffPlanningService({12: 20}).plan()
+        roles_in_result = [r.role for r in result.hours[0].roles]
+        assert "cashier" not in roles_in_result
+        assert "waiter" in roles_in_result
+
 
 # ---------------------------------------------------------------------------
 # Input validation
@@ -93,6 +101,18 @@ class TestStaffPlanningServiceValidation:
     def test_raises_on_float_hour_key(self):
         with pytest.raises(ValueError, match="plain integers"):
             StaffPlanningService({12.5: 10})
+
+    def test_raises_on_hour_out_of_range(self):
+        with pytest.raises(ValueError, match="range 0-23"):
+            StaffPlanningService({25: 10})
+
+    def test_raises_on_string_cover_value(self):
+        with pytest.raises(ValueError, match="plain integers"):
+            StaffPlanningService({12: "10"})
+
+    def test_raises_on_bool_cover_value(self):
+        with pytest.raises(ValueError, match="plain integers"):
+            StaffPlanningService({12: True})
 
     def test_raises_on_negative_covers(self):
         with pytest.raises(ValueError, match="non-negative"):
