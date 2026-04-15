@@ -48,24 +48,50 @@ def distribute_covers_by_hour(
         HourlyDistributionResult with per-hour cover counts.
 
     Raises:
-        ValueError: if distribution shares do not sum to 1.0 (±0.01 tolerance)
-                    or if any hour is outside 0–23.
+        ValueError: if the distribution is empty, if any share is negative,
+                    if any hour is outside 0–23, or if shares do not sum to
+                    1.0 (±0.01 tolerance).
     """
     if distribution is None:
         distribution = DEFAULT_HOURLY_DISTRIBUTION
 
     _validate_distribution(distribution)
 
-    slots = [
-        HourlySlot(
-            hour=hour,
-            covers=round(total_covers * share),
-            share=share,
-        )
-        for hour, share in sorted(distribution.items())
-    ]
+    sorted_items = sorted(distribution.items())
+    slots = _allocate_covers(total_covers, sorted_items)
 
     return HourlyDistributionResult(total_covers=total_covers, slots=slots)
+
+
+def _allocate_covers(
+    total_covers: float,
+    sorted_items: list[tuple[int, float]],
+) -> list[HourlySlot]:
+    """
+    Largest-remainder method: floor each slot first, then distribute
+    remaining covers to slots with the largest fractional parts.
+    Guarantees sum(slot.covers) == round(total_covers).
+    """
+    target = round(total_covers)
+    floored = [(hour, share, int(total_covers * share)) for hour, share in sorted_items]
+    allocated = sum(c for _, _, c in floored)
+    remainder = target - allocated
+
+    # rank slots by descending fractional part to assign leftover covers
+    remainders = sorted(
+        range(len(floored)),
+        key=lambda i: (total_covers * floored[i][1]) - floored[i][2],
+        reverse=True,
+    )
+
+    covers_list = [c for _, _, c in floored]
+    for i in range(remainder):
+        covers_list[remainders[i]] += 1
+
+    return [
+        HourlySlot(hour=hour, covers=covers_list[idx], share=share)
+        for idx, (hour, share, _) in enumerate(floored)
+    ]
 
 
 def _validate_distribution(distribution: dict[int, float]) -> None:

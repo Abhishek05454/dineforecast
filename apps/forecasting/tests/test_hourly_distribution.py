@@ -39,7 +39,18 @@ class TestDistributeCoversByHour:
         result = distribute_covers_by_hour(50, distribution=custom)
         assert result.as_dict() == {9: 20, 10: 30}
 
-    def test_fractional_covers_are_rounded(self):
+    def test_slot_covers_sum_to_total(self):
+        # Independent rounding can cause sum != total; largest-remainder must fix this
+        custom = {12: 0.333, 13: 0.333, 14: 0.334}
+        result = distribute_covers_by_hour(10, distribution=custom)
+        assert sum(s.covers for s in result.slots) == round(result.total_covers)
+
+    def test_slot_covers_sum_to_total_with_equal_shares(self):
+        # 0.5 / 0.5 with total=1 — banker's rounding yields 0+0 without largest-remainder
+        result = distribute_covers_by_hour(1, distribution={12: 0.5, 13: 0.5})
+        assert sum(s.covers for s in result.slots) == 1
+
+    def test_fractional_covers_are_integers(self):
         custom = {12: 0.333, 13: 0.333, 14: 0.334}
         result = distribute_covers_by_hour(10, distribution=custom)
         for slot in result.slots:
