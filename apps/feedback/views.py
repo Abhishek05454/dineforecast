@@ -1,5 +1,7 @@
+import logging
 from datetime import date
 
+from django.core.cache import cache
 from rest_framework import filters, permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,6 +14,8 @@ from .serializers import (
     GuestFeedbackSerializer,
 )
 from .services import ForecastFeedbackService
+
+logger = logging.getLogger(__name__)
 
 
 class GuestFeedbackViewSet(viewsets.ModelViewSet):
@@ -62,6 +66,10 @@ class ForecastFeedbackAPIView(APIView):
             "error_percentage": error_percentage,
             "reason": record.reason,
         }
+        cache_key = f"forecast:{record.date.isoformat()}"
+        cache.delete(cache_key)
+        logger.info("Invalidated forecast cache for %s after feedback submission", record.date)
+
         response_serializer = ForecastFeedbackResponseSerializer(response_payload)
         http_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
         return Response(response_serializer.data, status=http_status)
