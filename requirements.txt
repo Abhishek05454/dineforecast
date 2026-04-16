@@ -22,6 +22,9 @@ celery==5.3.6
 # Production server
 gunicorn==22.0.0
 
+# Machine learning
+scikit-learn==1.8.0
+
 # Dev / testing
 pytest==8.2.0
 pytest-django==4.8.0
