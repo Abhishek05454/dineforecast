@@ -29,12 +29,15 @@ DineForecast automates all three using historical cover data, configurable role 
 ┌──────────────────────────────────────────────────────────┐
 │                    Forecast Pipeline                     │
 │                                                          │
-│  MLForecastService ──(fallback)──► ForecastService       │
-│         │                                │               │
-│         └──── ForecastFeedbackService ◄──┘               │
+│  ForecastService                                         │
+│         │                                                │
+│         └──── ForecastFeedbackService ◄──────────────    │
 │                                                          │
 │  StaffPlanningService                                    │
 │  IngredientForecastService                               │
+│                                                          │
+│  Optional upgrade path: MLForecastService (fallback      │
+│  to ForecastService when data is insufficient)           │
 └──────────────┬───────────────────────────────────────────┘
                │
        ┌───────┴────────┐
@@ -59,6 +62,8 @@ DineForecast automates all three using historical cover data, configurable role 
 | `apps.feedback` | Forecast accuracy recording, adaptive learning loop, guest feedback |
 | `apps.operations` | Staff shift management, ingredient catalog, inventory tracking |
 | `core` | Shared base models (UUID PK, timestamps), choices, exception handler |
+
+
 
 ---
 
@@ -91,7 +96,7 @@ When ≥14 days of historical data are available, a `LinearRegression` model (sc
 | `is_weekend` | Binary 0/1 |
 | `past_covers` | 7-day rolling average at prediction time |
 
-**Why weather is excluded:** `HistoricalCover` records are stored per `(date, hour)`. Weather can vary across hours in a day, making it unsuitable as a daily aggregate training feature without a dedicated per-day weather table. The `weather` argument is accepted by the API for compatibility and stored in `ForecastResult`, but the model does not use it.
+**Why weather is excluded:** `HistoricalCover` records are stored per `(date, hour)`. Weather can vary across hours in a day, making it unsuitable as a daily aggregate training feature without a dedicated per-day weather table. The forecast endpoint accepts only a `date` query parameter — `weather` is not a client-supplied field. Weather adjustments in the rule-based engine (rain −15%, snow −30%) are internal constants, not ML input features.
 
 If scikit-learn is not installed or data is insufficient, the service falls back to `ForecastService` automatically.
 
@@ -100,9 +105,10 @@ If scikit-learn is not installed or data is insufficient, the service falls back
 After service, staff submit actual cover counts via `POST /api/v1/feedback/forecast/`. The system learns from errors over a rolling 30-day window:
 
 ```
-maturity          = min(1.0, sample_count / 10)
-effective_lr      = 0.20 × maturity
-adjustment_factor = clamp(1 + effective_lr × mean_signed_error%, 0.70, 1.30)
+maturity                   = min(1.0, sample_count / 10)
+effective_lr               = 0.20 × maturity
+mean_signed_error_fraction = mean signed percentage error as a fraction (e.g., 0.10 = +10%)
+adjustment_factor          = clamp(1 + effective_lr × mean_signed_error_fraction, 0.70, 1.30)
 ```
 
 The adjustment factor is multiplied into the final prediction. Component weights are also shifted — systematic underprediction increases the `trend` weight; overprediction decreases it — allowing the engine to self-correct its blend over time.
@@ -178,7 +184,7 @@ Response:
 }
 ```
 
-Responses are cached in Redis for 6 hours. A Celery beat job pre-warms the next 7 days every night.
+Responses are cached in Redis for 6 hours. A Celery beat job pre-warms the next 7 days every 24 hours.
 
 ### Feedback
 
@@ -212,7 +218,7 @@ Returns 201 on create, 200 on update (upsert by date). Invalidates the forecast 
 dineforecast/
 ├── apps/
 │   ├── forecasting/
-│   │   ├── models.py          # HistoricalCover, DemandForecast, StaffRole, DishPopularity
+│   │   ├── models.py          # HistoricalCover, DemandForecast, StaffingRequirement, StaffRole, DishPopularity
 │   │   ├── services.py        # ForecastService, MLForecastService, StaffPlanningService,
 │   │   │                      # IngredientForecastService, distribute_covers_by_hour
 │   │   ├── cache.py           # build_forecast_payload, forecast_cache_key
