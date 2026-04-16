@@ -317,31 +317,33 @@ class ForecastService:
 
 class MLForecastService:
     """
-    Linear regression forecaster using day_of_week, is_weekend, weather, and
-    past_covers (rolling 7-day average) as features.
+    Linear regression forecaster using day_of_week, is_weekend, and
+    past_covers (rolling 7-day average) as training features.
+
+    Weather is not stored per-day in historical data (it varies across hours
+    and is excluded from the GROUP BY aggregation), so it is encoded only for
+    the target prediction input, not used during training.
 
     Falls back to ForecastService (rule-based) when there are fewer than
-    ML_MIN_TRAINING_SAMPLES daily totals in HistoricalCover.
+    ML_MIN_TRAINING_SAMPLES daily totals in HistoricalCover, or if
+    scikit-learn is not installed.
     """
-
-    WEATHER_ENCODING: dict[str, int] = {
-        HistoricalCover.Weather.SUNNY: 0,
-        HistoricalCover.Weather.CLOUDY: 1,
-        HistoricalCover.Weather.RAINY: 2,
-        HistoricalCover.Weather.SNOWY: 3,
-        "": 0,
-    }
 
     def __init__(self, target_date: date, weather: str = ""):
         self.target_date = target_date
         self.weather = weather.lower().strip()
 
     def predict(self) -> ForecastResult:
-        from sklearn.linear_model import LinearRegression
-
         records = self._load_training_data()
 
         if len(records) < ML_MIN_TRAINING_SAMPLES:
+            return ForecastService(
+                target_date=self.target_date, weather=self.weather
+            ).predict()
+
+        try:
+            from sklearn.linear_model import LinearRegression
+        except ImportError:
             return ForecastService(
                 target_date=self.target_date, weather=self.weather
             ).predict()
@@ -377,14 +379,14 @@ class MLForecastService:
         )
         return [{"date": r["date"], "daily_total": r["daily_total"]} for r in rows]
 
-    def _build_features(self, records: list[dict]) -> tuple:
+    def _build_features(self, records: list[dict]) -> tuple[list[list[float]], list[float]]:
         X, y = [], []
         ordered_dates = [r["date"] for r in records]
         totals = {r["date"]: r["daily_total"] for r in records}
 
         for i, d in enumerate(ordered_dates):
             past_avg = self._rolling_avg(ordered_dates, totals, i)
-            X.append(self._encode(d, self.weather, d.weekday() >= 5, past_avg))
+            X.append(self._encode(d, d.weekday() >= 5, past_avg))
             y.append(float(totals[d]))
 
         return X, y
@@ -393,7 +395,7 @@ class MLForecastService:
         ordered_dates = [r["date"] for r in records]
         totals = {r["date"]: r["daily_total"] for r in records}
         past_avg = self._rolling_avg(ordered_dates, totals, len(ordered_dates))
-        return self._encode(self.target_date, self.weather, self.target_date.weekday() >= 5, past_avg)
+        return self._encode(self.target_date, self.target_date.weekday() >= 5, past_avg)
 
     @staticmethod
     def _rolling_avg(ordered_dates: list, totals: dict, up_to_index: int) -> float:
@@ -402,11 +404,15 @@ class MLForecastService:
             return 0.0
         return sum(totals[d] for d in window) / len(window)
 
-    def _encode(self, d: date, weather: str, is_weekend: bool, past_avg: float) -> list[float]:
+    @staticmethod
+    def _encode(d: date, is_weekend: bool, past_avg: float) -> list[float]:
+        """Encode a single row: day_of_week, is_weekend, past_covers.
+        Weather is excluded — it is not stored per historical day and using
+        the target day's weather as a constant across training rows would
+        prevent the model from learning any weather signal."""
         return [
             float(d.weekday()),
             1.0 if is_weekend else 0.0,
-            float(self.WEATHER_ENCODING.get(weather, 0)),
             past_avg,
         ]
 
