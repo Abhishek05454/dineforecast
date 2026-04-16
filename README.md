@@ -100,7 +100,7 @@ When ≥14 days of historical data are available, a `LinearRegression` model (sc
 
 **Why weather is excluded:** `HistoricalCover` records are stored per `(date, hour)`. Weather can vary across hours in a day, making it unsuitable as a daily aggregate training feature without a dedicated per-day weather table. The forecast endpoint accepts only a `date` query parameter — `weather` is not a client-supplied field. Weather adjustments in the rule-based engine (rain −15%, snow −30%) are internal constants, not ML input features.
 
-If scikit-learn is not installed or data is insufficient, the service falls back to `ForecastService` automatically.
+If historical data is insufficient, the service falls back to `ForecastService` automatically.
 
 ### Feedback Learning Loop (`ForecastFeedbackService`)
 
@@ -260,11 +260,14 @@ Content-Type: application/json
 
 ## Running Locally
 
-**Prerequisites:** Python 3.12+, PostgreSQL, Redis, [Poetry](https://python-poetry.org/docs/#installation)
+**Prerequisites:** Python 3.12+, PostgreSQL, Redis, [Poetry 2.1+](https://python-poetry.org/docs/#installation)
 
 ```bash
 # 1. Install dependencies (Poetry creates and manages the virtualenv)
 poetry install
+
+# To enable the ML forecasting engine (MLForecastService), install the ml extra:
+poetry install --extras ml
 
 # 2. Configure environment
 cp .env.example .env   # set DB_NAME, DB_USER, DB_PASSWORD, SECRET_KEY

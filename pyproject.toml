@@ -20,6 +20,10 @@ dependencies = [
     "django-redis==5.4.0",
     "celery==5.3.6",
     "gunicorn==22.0.0",
+]
+
+[project.optional-dependencies]
+ml = [
     "scikit-learn==1.8.0",
 ]
 
