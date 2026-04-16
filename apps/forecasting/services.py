@@ -321,8 +321,10 @@ class MLForecastService:
     past_covers (rolling 7-day average) as training features.
 
     Weather is not stored per-day in historical data (it varies across hours
-    and is excluded from the GROUP BY aggregation), so it is encoded only for
-    the target prediction input, not used during training.
+    and is excluded from the GROUP BY aggregation), so it is not encoded as
+    an ML feature for either training or target prediction. The `weather`
+    argument is accepted for API compatibility and passed through to
+    ForecastResult, but the model itself does not use it.
 
     Falls back to ForecastService (rule-based) when there are fewer than
     ML_MIN_TRAINING_SAMPLES daily totals in HistoricalCover, or if
