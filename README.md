@@ -36,8 +36,9 @@ DineForecast automates all three using historical cover data, configurable role 
 │  StaffPlanningService                                    │
 │  IngredientForecastService                               │
 │                                                          │
-│  Optional upgrade path: MLForecastService (fallback      │
-│  to ForecastService when data is insufficient)           │
+│  MLForecastService is implemented as a standalone        │
+│  service but is not wired into build_forecast_payload    │
+│  or the forecast API. ForecastService is always used.    │
 └──────────────┬───────────────────────────────────────────┘
                │
        ┌───────┴────────┐
@@ -79,10 +80,11 @@ The baseline engine combines three signals with configurable weights:
 | `weekday_avg` | 30% | Same weekday average over 8 historical weeks |
 | `recent_trend` | 20% | Linear projection from the past 7 days |
 
-Two manual adjustments are applied on top:
+One adjustment is applied on top:
 
 - **Weekend** +30%
-- **Rain** −15%, **Snow** −30%
+
+Weather adjustments (rain −15%, snow −30%) are implemented in `ForecastService` but the forecast API currently accepts only a `date` parameter and does not pass weather through, so these penalties are not active via the API path. They are available if `ForecastService` is called directly with a `weather` argument.
 
 When fewer than 2 days of data exist for the trend, the component falls back to `last_7_avg`. When a component has no data at all, its weight is redistributed proportionally to the remaining components.
 
@@ -195,7 +197,7 @@ Content-Type: application/json
 {"date": "2024-06-10", "predicted": 240, "actual": 265, "reason": "walk-ins"}
 ```
 
-Returns 201 on create, 200 on update (upsert by date). Invalidates the forecast cache for that date.
+`date` is optional; if omitted it defaults to today. Returns 201 on create, 200 on update (upsert by date). Invalidates the forecast cache for that date.
 
 ---
 
