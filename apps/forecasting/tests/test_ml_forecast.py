@@ -104,3 +104,32 @@ class TestMLForecastServicePrediction:
         # The projection should be above the simple average of 50..180 (avg ~115)
         simple_avg = 50 + (ML_MIN_TRAINING_SAMPLES - 1) * 10 / 2
         assert result.final_prediction > simple_avg
+
+    def test_aggregates_multiple_hours_into_single_daily_total(self):
+        # HistoricalCover is unique per (date, hour). If _load_training_data
+        # groups by weather/is_weekend as well as date, a day with covers
+        # spread across hours would be split into multiple training rows,
+        # inflating daily_total and the sample count. This verifies correct
+        # per-day aggregation.
+        target = date(2024, 6, 20)
+        # Create ML_MIN_TRAINING_SAMPLES - 1 single-hour days as padding
+        for i in range(ML_MIN_TRAINING_SAMPLES - 1):
+            day = target - timedelta(days=ML_MIN_TRAINING_SAMPLES - i)
+            HistoricalCover.objects.create(
+                date=day, hour=12, covers=100, is_weekend=day.weekday() >= 5,
+            )
+        # Final training day has covers split across 3 hours (total = 300)
+        multi_hour_day = target - timedelta(days=1)
+        for hour, covers in [(11, 80), (12, 120), (13, 100)]:
+            HistoricalCover.objects.create(
+                date=multi_hour_day, hour=hour, covers=covers,
+                is_weekend=multi_hour_day.weekday() >= 5,
+            )
+
+        result = MLForecastService(target_date=target).predict()
+
+        # ML path should have fired (not fallen back to rule-based)
+        assert any("ml:linear_regression" in adj for adj in result.adjustments)
+        # Sample count in the adjustment should equal ML_MIN_TRAINING_SAMPLES (not more)
+        adj = next(a for a in result.adjustments if "ml:linear_regression" in a)
+        assert f"samples={ML_MIN_TRAINING_SAMPLES}" in adj
