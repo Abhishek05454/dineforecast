@@ -142,7 +142,16 @@ Projected orders per dish = `covers × (dish_popularity% / total_popularity%)`. 
 
 ## API Reference
 
-All endpoints require JWT Bearer authentication unless noted.
+All endpoints require a JWT Bearer token in the `Authorization` header unless noted.
+
+### Auth
+
+The following endpoints are **unauthenticated** and are used to bootstrap JWT access:
+
+- `POST /api/token/` — exchange valid user credentials for an access token and refresh token.
+- `POST /api/token/refresh/` — exchange a valid refresh token for a new access token.
+
+Create a local user with `python manage.py createsuperuser`, then call `POST /api/token/` to obtain tokens.
 
 ### Forecast
 
