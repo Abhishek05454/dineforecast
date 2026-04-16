@@ -13,7 +13,7 @@ from .serializers import (
     ForecastQuerySerializer,
     StaffingRequirementSerializer,
 )
-from .tasks import _build_forecast_payload, _forecast_cache_key
+from .cache import build_forecast_payload, forecast_cache_key
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +41,13 @@ class ForecastAPIView(APIView):
         query_serializer.is_valid(raise_exception=True)
         target_date = query_serializer.validated_data["date"]
 
-        cache_key = _forecast_cache_key(target_date)
+        cache_key = forecast_cache_key(target_date)
         cached = cache.get(cache_key)
         if cached is not None:
             logger.debug("Forecast cache hit for %s", target_date)
             return Response(cached, status=status.HTTP_200_OK)
 
         logger.debug("Forecast cache miss for %s", target_date)
-        serialized = _build_forecast_payload(target_date)
+        serialized = build_forecast_payload(target_date)
         cache.set(cache_key, serialized, timeout=getattr(settings, "FORECAST_CACHE_TTL", 60 * 60 * 6))
         return Response(serialized, status=status.HTTP_200_OK)

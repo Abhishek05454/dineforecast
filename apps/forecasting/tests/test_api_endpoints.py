@@ -96,7 +96,7 @@ class TestForecastEndpoint:
             "ingredient_plan_available": True,
             "ingredient_plan_error": None,
         }
-        with patch("apps.forecasting.views._build_forecast_payload", return_value=sample_payload) as mock_build:
+        with patch("apps.forecasting.views.build_forecast_payload", return_value=sample_payload) as mock_build:
             auth_client.get("/api/v1/forecasting/forecast/", {"date": target.isoformat()})
             auth_client.get("/api/v1/forecasting/forecast/", {"date": target.isoformat()})
             assert mock_build.call_count == 1
