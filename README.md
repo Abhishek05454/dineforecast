@@ -1,6 +1,6 @@
 # DineForecast
 
-A restaurant resource planning system that forecasts daily covers, generates hourly staff plans, and projects ingredient orders  with a feedback-driven learning loop and an optional machine learning upgrade path.
+A restaurant resource planning system that forecasts daily covers, generates hourly staff plans, and projects ingredient orders with a feedback-driven learning loop and an optional machine learning upgrade path.
 
 ---
 
@@ -226,7 +226,7 @@ Content-Type: application/json
 ## Project Structure
 
 ```
-.                              # repo root (manage.py, conftest.py, requirements.txt live here)
+.                              # repo root (manage.py, conftest.py, pyproject.toml, poetry.lock live here)
 ├── apps/
 │   ├── forecasting/
 │   │   ├── models.py          # HistoricalCover, DemandForecast, StaffingRequirement, StaffRole, DishPopularity
