@@ -6,7 +6,7 @@ authors = [
     {name = "Abhishek05454"}
 ]
 readme = "README.md"
-requires-python = "^3.12"
+requires-python = ">=3.12,<4"
 dependencies = [
     "django==5.0.4",
     "djangorestframework==3.15.1",

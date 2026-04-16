@@ -260,30 +260,27 @@ Content-Type: application/json
 
 ## Running Locally
 
-**Prerequisites:** Python 3.12, PostgreSQL, Redis
+**Prerequisites:** Python 3.12+, PostgreSQL, Redis, [Poetry](https://python-poetry.org/docs/#installation)
 
 ```bash
-# 1. Clone and create virtualenv
-python -m venv .venv && source .venv/bin/activate
+# 1. Install dependencies (Poetry creates and manages the virtualenv)
+poetry install
 
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Configure environment
+# 2. Configure environment
 cp .env.example .env   # set DB_NAME, DB_USER, DB_PASSWORD, SECRET_KEY
 
-# 4. Migrate and run
-python manage.py migrate
-python manage.py runserver
+# 3. Migrate and run
+poetry run python manage.py migrate
+poetry run python manage.py runserver
 
-# 5. Start Celery worker and beat (separate terminals)
-celery -A config worker -l info
-celery -A config beat -l info
+# 4. Start Celery worker and beat (separate terminals)
+poetry run celery -A config worker -l info
+poetry run celery -A config beat -l info
 ```
 
 **Run tests:**
 ```bash
-pytest
+poetry run pytest
 ```
 
 ---
