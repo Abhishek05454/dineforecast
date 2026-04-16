@@ -10,6 +10,8 @@ from apps.feedback.services import ForecastFeedbackService
 from apps.operations.models import Ingredient
 from .models import DishPopularity, HistoricalCover, StaffRole
 
+ML_MIN_TRAINING_SAMPLES = 14
+
 DEFAULT_HOURLY_DISTRIBUTION: dict[int, float] = {
     12: 0.10,
     13: 0.25,
@@ -311,6 +313,99 @@ class ForecastService:
         next_day_ordinal = records[-1]["date"].toordinal() + 1 - first_ordinal
         projected = slope * next_day_ordinal + intercept
         return max(0.0, projected)
+
+
+class MLForecastService:
+    """
+    Linear regression forecaster using day_of_week, is_weekend, weather, and
+    past_covers (rolling 7-day average) as features.
+
+    Falls back to ForecastService (rule-based) when there are fewer than
+    ML_MIN_TRAINING_SAMPLES daily totals in HistoricalCover.
+    """
+
+    WEATHER_ENCODING: dict[str, int] = {
+        HistoricalCover.Weather.SUNNY: 0,
+        HistoricalCover.Weather.CLOUDY: 1,
+        HistoricalCover.Weather.RAINY: 2,
+        HistoricalCover.Weather.SNOWY: 3,
+        "": 0,
+    }
+
+    def __init__(self, target_date: date, weather: str = ""):
+        self.target_date = target_date
+        self.weather = weather.lower().strip()
+
+    def predict(self) -> ForecastResult:
+        from sklearn.linear_model import LinearRegression
+
+        records = self._load_training_data()
+
+        if len(records) < ML_MIN_TRAINING_SAMPLES:
+            return ForecastService(
+                target_date=self.target_date, weather=self.weather
+            ).predict()
+
+        X, y = self._build_features(records)
+        model = LinearRegression()
+        model.fit(X, y)
+
+        target_features = self._target_features()
+        raw_prediction = float(model.predict([target_features])[0])
+        final = max(0.0, raw_prediction)
+
+        return ForecastResult(
+            target_date=self.target_date,
+            base_prediction=round(final, 2),
+            final_prediction=round(final, 2),
+            is_weekend=self.target_date.weekday() >= 5,
+            weather=self.weather,
+            adjustments=[f"ml:linear_regression samples={len(records)}"],
+        )
+
+    def _load_training_data(self) -> list[dict]:
+        return list(
+            HistoricalCover.objects
+            .filter(date__lt=self.target_date)
+            .values("date", "weather", "is_weekend")
+            .annotate(daily_total=Sum("covers"))
+            .order_by("date")
+        )
+
+    def _build_features(self, records: list[dict]) -> tuple:
+        X, y = [], []
+        dates_index = {r["date"]: r for r in records}
+        ordered_dates = sorted(dates_index)
+
+        for i, d in enumerate(ordered_dates):
+            rec = dates_index[d]
+            past_avg = self._rolling_avg(ordered_dates, dates_index, i)
+            X.append(self._encode(d, rec["weather"] or "", rec["is_weekend"], past_avg))
+            y.append(float(rec["daily_total"]))
+
+        return X, y
+
+    def _target_features(self) -> list[float]:
+        records = self._load_training_data()
+        dates_index = {r["date"]: r for r in records}
+        ordered_dates = sorted(dates_index)
+        past_avg = self._rolling_avg(ordered_dates, dates_index, len(ordered_dates))
+        return self._encode(self.target_date, self.weather, self.target_date.weekday() >= 5, past_avg)
+
+    @staticmethod
+    def _rolling_avg(ordered_dates: list, dates_index: dict, up_to_index: int) -> float:
+        window = ordered_dates[max(0, up_to_index - 7): up_to_index]
+        if not window:
+            return 0.0
+        return sum(dates_index[d]["daily_total"] for d in window) / len(window)
+
+    def _encode(self, d: date, weather: str, is_weekend: bool, past_avg: float) -> list[float]:
+        return [
+            float(d.weekday()),
+            1.0 if is_weekend else 0.0,
+            float(self.WEATHER_ENCODING.get(weather, 0)),
+            past_avg,
+        ]
 
 
 @dataclass
