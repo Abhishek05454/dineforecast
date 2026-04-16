@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 FORECAST_LOOKAHEAD_DAYS = 7
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def recalculate_forecasts(self):
+@shared_task
+def recalculate_forecasts():
     today = date.today()
     succeeded = []
     failed = []
@@ -34,10 +34,6 @@ def recalculate_forecasts(self):
         except Exception as exc:
             logger.error("Failed to recalculate forecast for %s: %s", target, exc, exc_info=True)
             failed.append(str(target))
-            try:
-                raise self.retry(exc=exc)
-            except self.MaxRetriesExceededError:
-                logger.error("Max retries exceeded for forecast recalculation on %s", target)
 
     logger.info(
         "Forecast recalculation complete. succeeded=%s failed=%s",

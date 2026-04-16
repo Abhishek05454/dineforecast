@@ -1,11 +1,10 @@
 from datetime import date, timedelta
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
 
 from apps.forecasting.tasks import (
-    _build_forecast_payload,
     _forecast_cache_key,
     recalculate_forecasts,
 )
@@ -55,10 +54,8 @@ class TestRecalculateForecasts:
                 raise ValueError("service error")
             return SAMPLE_PAYLOAD
 
-        # Prevent Celery retry from re-raising so the loop continues to the next date.
         with patch("apps.forecasting.tasks._build_forecast_payload", side_effect=side_effect), \
-             patch("apps.forecasting.tasks.date") as mock_date, \
-             patch.object(recalculate_forecasts, "retry", side_effect=recalculate_forecasts.MaxRetriesExceededError()):
+             patch("apps.forecasting.tasks.date") as mock_date:
             mock_date.today.return_value = today
             mock_date.fromisoformat = date.fromisoformat
 

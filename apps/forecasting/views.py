@@ -11,7 +11,6 @@ from .models import DemandForecast, StaffingRequirement
 from .serializers import (
     DemandForecastSerializer,
     ForecastQuerySerializer,
-    ForecastResponseSerializer,
     StaffingRequirementSerializer,
 )
 from .tasks import _build_forecast_payload, _forecast_cache_key
