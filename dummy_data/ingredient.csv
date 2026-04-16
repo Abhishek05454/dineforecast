@@ -1,0 +1,11 @@
+name,unit,default_quantity_per_dish,shelf_life_days,supplier_lead_time_days
+Chicken Breast,kg,0.2500,3,1
+Beef Mince,kg,0.2000,2,1
+Mozzarella Cheese,kg,0.1500,7,2
+Pasta,kg,0.1000,365,7
+Romaine Lettuce,kg,0.0800,5,1
+Tomato Sauce,litre,0.1200,14,3
+Burger Buns,dozen,0.0833,4,1
+Olive Oil,litre,0.0500,730,14
+Parmesan,kg,0.0300,30,5
+Eggs,dozen,0.1667,21,2

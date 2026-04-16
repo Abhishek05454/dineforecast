@@ -1,0 +1,956 @@
+{
+  "info": {
+    "name": "DineForecast",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "your_username",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "your_password",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Obtain Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.access) {",
+                  "    pm.collectionVariables.set('access_token', json.access);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/token/",
+              "protocol": "http",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "token",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh\": \"<paste_refresh_token_here>\"\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/token/refresh/",
+              "protocol": "http",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "token",
+                "refresh",
+                ""
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Forecast",
+      "item": [
+        {
+          "name": "Get Forecast",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/forecasting/forecast/?date=2024-06-10",
+              "protocol": "http",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "forecasting",
+                "forecast",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "2024-06-10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Forecast - Missing Date (400)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/forecasting/forecast/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "forecasting",
+                "forecast",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Get Forecast - Invalid Date (400)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/forecasting/forecast/?date=not-a-date",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "forecasting",
+                "forecast",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "not-a-date"
+                }
+              ],
+              "protocol": "http"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Feedback",
+      "item": [
+        {
+          "name": "Submit Forecast Feedback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"2024-06-10\",\n  \"predicted\": 240,\n  \"actual\": 265,\n  \"reason\": \"walk-ins\"\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/feedback/forecast/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "forecast",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Submit Feedback - No Date (defaults to today)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"predicted\": 200,\n  \"actual\": 180,\n  \"reason\": \"slow night\"\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/feedback/forecast/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "forecast",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Submit Feedback - Update Existing (200)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"2024-06-10\",\n  \"predicted\": 240,\n  \"actual\": 270,\n  \"reason\": \"corrected count\"\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/feedback/forecast/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "forecast",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Submit Feedback - Negative Value (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"predicted\": -1,\n  \"actual\": 100\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/feedback/forecast/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "forecast",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "List Guest Feedback",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/feedback/guest/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "guest",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Create Guest Feedback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visit_date\": \"2024-06-10\",\n  \"category\": \"food\",\n  \"rating\": 4,\n  \"comment\": \"Great burger, slightly slow service.\",\n  \"guest_name\": \"Jane Doe\"\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/feedback/guest/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "guest",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Get Guest Feedback",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/feedback/guest/<id>/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "guest",
+                "<id>",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Update Guest Feedback",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_resolved\": true\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/feedback/guest/<id>/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "guest",
+                "<id>",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demand Forecast",
+      "item": [
+        {
+          "name": "List Demand Forecasts",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/forecasting/demand/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "forecasting",
+                "demand",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "List - Filter by Date",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/forecasting/demand/?forecast_date=2024-06-10",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "forecasting",
+                "demand",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "forecast_date",
+                  "value": "2024-06-10"
+                }
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Create Demand Forecast",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"forecast_date\": \"2024-06-10\",\n  \"meal_period\": \"dinner\",\n  \"expected_covers\": 120,\n  \"notes\": \"Weekend \u2014 expect higher covers\"\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/forecasting/demand/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "forecasting",
+                "demand",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Get Demand Forecast",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/forecasting/demand/<id>/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "forecasting",
+                "demand",
+                "<id>",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Update Demand Forecast",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expected_covers\": 140\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/forecasting/demand/<id>/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "forecasting",
+                "demand",
+                "<id>",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Delete Demand Forecast",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/forecasting/demand/<id>/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "forecasting",
+                "demand",
+                "<id>",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Staffing Requirements",
+      "item": [
+        {
+          "name": "List Staffing Requirements",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/forecasting/staffing/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "forecasting",
+                "staffing",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Create Staffing Requirement",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"forecast\": \"<demand_forecast_id>\",\n  \"front_of_house\": 4,\n  \"back_of_house\": 3,\n  \"management\": 1\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/forecasting/staffing/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "forecasting",
+                "staffing",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Get Staffing Requirement",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/forecasting/staffing/<id>/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "forecasting",
+                "staffing",
+                "<id>",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Operations - Shifts",
+      "item": [
+        {
+          "name": "List Shifts",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/operations/shifts/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "shifts",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "List Shifts - Filter by Date and Role",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/operations/shifts/?shift_date=2024-06-10&role=waiter",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "shifts",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "shift_date",
+                  "value": "2024-06-10"
+                },
+                {
+                  "key": "role",
+                  "value": "waiter"
+                }
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Create Shift",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"staff_name\": \"Alice Smith\",\n  \"role\": \"waiter\",\n  \"shift_date\": \"2024-06-10\",\n  \"start_time\": \"12:00:00\",\n  \"end_time\": \"20:00:00\",\n  \"status\": \"scheduled\"\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/operations/shifts/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "shifts",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Create Shift - Invalid Times (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"staff_name\": \"Bob Jones\",\n  \"role\": \"chef\",\n  \"shift_date\": \"2024-06-10\",\n  \"start_time\": \"20:00:00\",\n  \"end_time\": \"12:00:00\",\n  \"status\": \"scheduled\"\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/operations/shifts/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "shifts",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Update Shift Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"completed\"\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/operations/shifts/<id>/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "shifts",
+                "<id>",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Delete Shift",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/operations/shifts/<id>/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "shifts",
+                "<id>",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Operations - Inventory",
+      "item": [
+        {
+          "name": "List Inventory",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/operations/inventory/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "inventory",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "List Inventory - Filter by Unit",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/operations/inventory/?unit=kg",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "inventory",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "unit",
+                  "value": "kg"
+                }
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Create Inventory Item",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"beef\",\n  \"unit\": \"kg\",\n  \"current_quantity\": \"25.00\",\n  \"reorder_threshold\": \"5.00\",\n  \"unit_cost\": \"12.50\"\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/operations/inventory/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "inventory",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Get Inventory Item",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/operations/inventory/<id>/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "inventory",
+                "<id>",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        },
+        {
+          "name": "Update Inventory Quantity",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_quantity\": \"18.00\"\n}"
+            },
+            "url": {
+              "raw": "http://{{base_url}}/api/v1/operations/inventory/<id>/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "inventory",
+                "<id>",
+                ""
+              ],
+              "protocol": "http"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

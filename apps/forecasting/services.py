@@ -529,7 +529,7 @@ class IngredientForecastService:
             )
         if not math.isfinite(buffer_fraction) or not (0.10 <= buffer_fraction <= 0.20):
             raise ValueError(
-                f"buffer_fraction must be between 0.10 and 0.20 (got {buffer_fraction!r})."
+                f"buffer_fraction must be between 0.10 and 0.20 (got - {buffer_fraction!r})."
             )
         self.covers = predicted_covers
         self.buffer_fraction = buffer_fraction
